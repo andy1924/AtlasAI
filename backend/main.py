@@ -4,6 +4,7 @@ import uvicorn
 from pydantic import BaseModel
 import json
 import os
+from newsEngine import get_latest_news
 from memory import add_learned_action
 from state import Shipment, Alert, AgentState
 from agent import app as agent_app
@@ -106,6 +107,13 @@ def run_agent():
         "updated_shipments": current_shipments
     }
 
+cached_news = get_latest_news()
+
+# Add this new endpoint
+@app.get("/api/news")
+def get_news():
+    """Serves the live OSINT news data to the frontend."""
+    return {"news": cached_news}
 
 @app.post("/api/approve-actions")
 def approve_actions():

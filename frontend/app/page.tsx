@@ -2,16 +2,70 @@
 
 import { useState, useEffect } from "react";
 
-export default function Dashboard() {
-  const [shipments, setShipments] = useState([]);
-  const [alerts, setAlerts] = useState([]);
-  const [agentLogs, setAgentLogs] = useState([]);
-  const [isAgentRunning, setIsAgentRunning] = useState(false);
+// ==========================================
+// TYPESCRIPT INTERFACES
+// ==========================================
 
-  const [currentPage, setCurrentPage] = useState(1);
+interface Shipment {
+  shipment_id: string;
+  origin: string;
+  destination: string;
+  carrier: string;
+  weight_kg: number;
+  distance_km: number;
+  eta_hours: number;
+  status: string;
+  delay_probability: number;
+  operational_cost: number;
+  partner_reliability: number;
+  timestamp: string;
+}
+
+interface Alert {
+  id: string;
+  type: string;
+  location: string;
+  severity: string;
+  description: string;
+}
+
+interface AgentLog {
+  hypothesis: string;
+  decision: string;
+  action_taken: string;
+}
+
+interface ChaosScenario {
+  type: string;
+  location: string;
+  severity: string;
+  description: string;
+}
+
+interface NewsItem {
+  title: string;
+  source: string;
+  url: string;
+  chaos_type: string;
+  location: string | null;
+}
+
+// ==========================================
+// MAIN DASHBOARD COMPONENT
+// ==========================================
+
+export default function Dashboard() {
+  // Apply TypeScript types to state
+  const [shipments, setShipments] = useState<Shipment[]>([]);
+  const [alerts, setAlerts] = useState<Alert[]>([]);
+  const [agentLogs, setAgentLogs] = useState<AgentLog[]>([]);
+  const [liveNews, setLiveNews] = useState<NewsItem[]>([]);
+  const [isAgentRunning, setIsAgentRunning] = useState<boolean>(false);
+
+  const [currentPage, setCurrentPage] = useState<number>(1);
   const itemsPerPage = 20;
 
-  const chaosScenarios = [
+  const chaosScenarios: ChaosScenario[] = [
     { type: "Port Bombing", location: "South Kathryntown", severity: "High", description: "Critical infrastructure destroyed. Total maritime halt." },
     { type: "Hurricane", location: "Haleview", severity: "High", description: "Category 5 hurricane halting all inbound and outbound traffic." },
     { type: "Traffic Jam", location: "Port Elizabeth", severity: "Low", description: "Severe congestion on main highway causing minor delays." },
@@ -20,14 +74,18 @@ export default function Dashboard() {
 
   const fetchState = async () => {
     try {
-      const [shipmentRes, alertRes] = await Promise.all([
+      const [shipmentRes, alertRes, newsRes] = await Promise.all([
         fetch("http://127.0.0.1:8000/api/shipments"),
         fetch("http://127.0.0.1:8000/api/alerts"),
+        fetch("http://127.0.0.1:8000/api/news"), // Fetches the live MediaStack news
       ]);
       const shipmentData = await shipmentRes.json();
       const alertData = await alertRes.json();
+      const newsData = await newsRes.json();
+
       setShipments(shipmentData.shipments || []);
       setAlerts(alertData.alerts || []);
+      setLiveNews(newsData.news || []);
     } catch (error) {
       console.error("Failed to fetch state:", error);
     }
@@ -37,7 +95,7 @@ export default function Dashboard() {
     fetchState();
   }, []);
 
-  const handleChaos = async (scenario: any) => {
+  const handleChaos = async (scenario: ChaosScenario) => {
     await fetch("http://127.0.0.1:8000/api/trigger-chaos", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -80,11 +138,11 @@ export default function Dashboard() {
     }
   };
 
-  const activeAlertLocations = alerts.map((a: any) => a.location);
+  const activeAlertLocations = alerts.map((a: Alert) => a.location);
 
-  const pendingApprovals = shipments.filter((s: any) => s.status === "Pending Approval");
+  const pendingApprovals = shipments.filter((s: Shipment) => s.status === "Pending Approval");
 
-  const sortedShipments = [...shipments].sort((a: any, b: any) => {
+  const sortedShipments = [...shipments].sort((a: Shipment, b: Shipment) => {
     const aAffected = activeAlertLocations.includes(a.origin) || activeAlertLocations.includes(a.destination);
     const bAffected = activeAlertLocations.includes(b.origin) || activeAlertLocations.includes(b.destination);
     if (aAffected && !bAffected) return -1;
@@ -147,7 +205,7 @@ export default function Dashboard() {
             </button>
           </div>
           <div className="flex gap-2 overflow-x-auto pb-2">
-            {pendingApprovals.map((s: any) => (
+            {pendingApprovals.map((s: Shipment) => (
               <div key={s.shipment_id} className="bg-gray-900 p-2 rounded border border-yellow-700 text-xs whitespace-nowrap">
                 <span className="text-yellow-500 font-mono">{s.shipment_id}</span> | {s.carrier}
               </div>
@@ -166,7 +224,7 @@ export default function Dashboard() {
               <p className="text-gray-500 italic">No active disruptions detected.</p>
             ) : (
               <ul className="space-y-3">
-                {alerts.map((a: any) => (
+                {alerts.map((a: Alert) => (
                   <li key={a.id} className="bg-red-900/20 border border-red-700/50 p-3 rounded flex justify-between items-center">
                     <div>
                       <strong className="text-red-400">{a.type}</strong> @ {a.location} - <span className="text-red-200">{a.description}</span>
@@ -199,7 +257,7 @@ export default function Dashboard() {
                   </tr>
                 </thead>
                 <tbody>
-                  {currentShipments.map((s: any) => {
+                  {currentShipments.map((s: Shipment) => {
                     const isAffected = activeAlertLocations.includes(s.origin) || activeAlertLocations.includes(s.destination);
                     return (
                       <tr key={s.shipment_id} className="border-b border-gray-700/50">
@@ -248,33 +306,58 @@ export default function Dashboard() {
           </div>
         </div>
 
-        {/* Action History Log */}
-        <div className="bg-gray-800 p-6 rounded-lg shadow-md border border-gray-700 h-full max-h-[85vh] overflow-y-auto">
-          <h2 className="text-xl font-semibold mb-4 text-purple-400">Action History Log</h2>
-          {agentLogs.length === 0 ? (
-            <p className="text-gray-500 italic">Awaiting system events...</p>
-          ) : (
-            <div className="space-y-4">
-              {agentLogs.map((log: any, idx) => (
-                <div key={idx} className={`p-4 rounded border text-sm ${log.hypothesis?.includes("Human") ? 'bg-yellow-900/10 border-yellow-700/50' : 'bg-gray-900 border-gray-700'}`}>
-                  <div className="mb-2">
-                    <span className="text-xs text-gray-500 uppercase tracking-wide block">Reasoning / Hypothesis</span>
-                    <p className="text-gray-300 mt-1">{log.hypothesis}</p>
+        {/* Right Column */}
+        <div className="flex flex-col gap-6">
+          {/* Action History Log */}
+          <div className="bg-gray-800 p-6 rounded-lg shadow-md border border-gray-700 flex-grow max-h-[50vh] overflow-y-auto">
+            <h2 className="text-xl font-semibold mb-4 text-purple-400">Action History Log</h2>
+            {agentLogs.length === 0 ? (
+              <p className="text-gray-500 italic">Awaiting system events...</p>
+            ) : (
+              <div className="space-y-4">
+                {agentLogs.map((log: AgentLog, idx: number) => (
+                  <div key={idx} className={`p-4 rounded border text-sm ${log.hypothesis?.includes("Human") ? 'bg-yellow-900/10 border-yellow-700/50' : 'bg-gray-900 border-gray-700'}`}>
+                    <div className="mb-2">
+                      <span className="text-xs text-gray-500 uppercase tracking-wide block">Reasoning / Hypothesis</span>
+                      <p className="text-gray-300 mt-1">{log.hypothesis}</p>
+                    </div>
+                    <div className="mb-2">
+                      <span className="text-xs text-gray-500 uppercase tracking-wide block">System Decision</span>
+                      <p className="text-blue-300 mt-1">{log.decision}</p>
+                    </div>
+                    <div>
+                      <span className="text-xs text-gray-500 uppercase tracking-wide block">Execution</span>
+                      <p className={`font-semibold mt-1 ${log.action_taken?.includes("human") || log.hypothesis?.includes("Human") ? "text-yellow-400" : "text-purple-400"}`}>
+                        {log.action_taken?.includes("human") || log.hypothesis?.includes("Human") ? "[ESCALATED] " : "[AUTO] "} {log.action_taken}
+                      </p>
+                    </div>
                   </div>
-                  <div className="mb-2">
-                    <span className="text-xs text-gray-500 uppercase tracking-wide block">System Decision</span>
-                    <p className="text-blue-300 mt-1">{log.decision}</p>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* LIVE NEWS RADAR (From MediaStack) */}
+          <div className="bg-gray-800 p-6 rounded-lg shadow-md border border-gray-700 h-full max-h-[35vh] overflow-y-auto">
+            <h2 className="text-xl font-semibold mb-4 text-blue-300">🌍 Global Disruption Radar</h2>
+            {liveNews.length === 0 ? (
+              <p className="text-gray-500 italic">Scanning global OSINT feeds...</p>
+            ) : (
+              <div className="space-y-4">
+                {liveNews.map((newsItem: NewsItem, idx: number) => (
+                  <div key={idx} className="p-3 rounded border border-gray-700 bg-gray-900 text-sm">
+                    <span className="text-xs text-red-400 font-bold tracking-wide">
+                      {newsItem.chaos_type} {newsItem.location && `[MATCH: ${newsItem.location}]`}
+                    </span>
+                    <a href={newsItem.url} target="_blank" rel="noopener noreferrer" className="block text-gray-200 mt-1 hover:text-blue-400 transition-colors">
+                      {newsItem.title}
+                    </a>
+                    <span className="text-xs text-gray-500 mt-2 block">Source: {newsItem.source}</span>
                   </div>
-                  <div>
-                    <span className="text-xs text-gray-500 uppercase tracking-wide block">Execution</span>
-                    <p className={`font-semibold mt-1 ${log.action_taken?.includes("human") || log.hypothesis?.includes("Human") ? "text-yellow-400" : "text-purple-400"}`}>
-                      {log.action_taken?.includes("human") || log.hypothesis?.includes("Human") ? "[ESCALATED] " : "[AUTO] "} {log.action_taken}
-                    </p>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
+                ))}
+              </div>
+            )}
+          </div>
         </div>
       </div>
     </div>
