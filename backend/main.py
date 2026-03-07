@@ -2,101 +2,83 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 import uvicorn
 from pydantic import BaseModel
+import json
+import os
 
-# Import our state models and the compiled LangGraph agent
 from state import Shipment, Alert, AgentState
 from agent import app as agent_app
 
 app = FastAPI(title="Cyber Cypher Logistics API")
 
-# Allow the Next.js frontend to communicate with this backend
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # For the hackathon, allow all. Restrict in prod!
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# Add these imports at the top of backend/main.py if not there
-import json
-import os
-
 # --- Load Global In-Memory State from JSON ---
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+JSON_PATH = os.path.join(BASE_DIR, "maindata", "simulated_shipments.json")
 
-Shipment_Path = r"..\maindata\simulated_shipments.json"
 current_shipments = []
+current_alerts = []
+agent_history = []
 
 try:
-    with open(Shipment_Path, "r") as file:
+    with open(JSON_PATH, "r", encoding="utf-8") as file:
         data = json.load(file)
-        # Convert raw JSON dicts into Pydantic Shipment objects
         current_shipments = [Shipment(**item) for item in data]
-    print(f"✅ Successfully loaded {len(current_shipments)} shipments from JSON.")
-except FileNotFoundError:
-    print(f"❌ Error: Could not find JSON file at {Shipment_Path}")
+    print(f"✅ Successfully loaded {len(current_shipments)} shipments.")
 except Exception as e:
-    print(f"❌ Error parsing JSON: {e}")
-
-# (Keep your current_alerts and agent_history lists exactly as they are)
-current_alerts = []
-agent_history = []  # Stores the reasoning logs for the UI
+    print(f"❌ Error loading JSON: {e}")
 
 
 # --- API Endpoints ---
 
 @app.get("/api/shipments")
 def get_shipments():
-    """Fetch the live logistics status."""
     return {"shipments": current_shipments}
 
 
 @app.get("/api/alerts")
 def get_alerts():
-    """Fetch active news or system alerts."""
     return {"alerts": current_alerts}
-
-
-@app.get("/api/agent-history")
-def get_history():
-    """Fetch the agent's thought process for the UI log."""
-    return {"history": agent_history}
 
 
 class ChaosRequest(BaseModel):
     type: str
     location: str
-    severity: str
+    severity: str  # Ensure this is here
     description: str
 
 
-# In backend/main.py
-
 @app.post("/api/trigger-chaos")
 def trigger_chaos(chaos: ChaosRequest):
-    global current_shipments  # Make sure you declare this to modify the list
+    global current_shipments, current_alerts
+
+    # 1. Add the new alert with the CORRECT severity from the frontend
     new_alert = Alert(
         id=f"ALT-{len(current_alerts) + 1:03d}",
         type=chaos.type,
         location=chaos.location,
-        severity=chaos.severity,  # <--- Make sure your Alert Pydantic model in state.py accepts this!
+        severity=chaos.severity,  # <--- This fixes the "Always High" bug
         description=chaos.description
     )
     current_alerts.append(new_alert)
 
-    # --- THE BACKEND FIX ---
-    # Instantly flag shipments in the danger zone so the AI knows they are at risk
+    # 2. Flag affected shipments instantly
     for shipment in current_shipments:
         if shipment.origin == chaos.location or shipment.destination == chaos.location:
             shipment.status = "At Risk"
-            shipment.delay_probability = 0.95  # Artificially spike the delay risk
+            shipment.delay_probability = 0.95
 
-    return {"message": "Chaos injected successfully!", "alert": new_alert}
+    return {"message": "Chaos injected!", "alert": new_alert}
 
 
 @app.post("/api/run-agent")
 def run_agent():
-    """Triggers the LangGraph Observe -> Reason -> Decide -> Act loop."""
     global current_shipments
 
     initial_state: AgentState = {
@@ -108,19 +90,15 @@ def run_agent():
         "action_taken": ""
     }
 
-    # Run the graph
     final_state = agent_app.invoke(initial_state)
-
-    # Update our global state with the agent's actions
     current_shipments = final_state.get("shipments", current_shipments)
 
-    # Log the thought process for the frontend UI
     log_entry = {
         "hypothesis": final_state.get("hypothesis"),
         "decision": final_state.get("decision"),
         "action_taken": final_state.get("action_taken")
     }
-    agent_history.append(log_entry)
+    agent_history.insert(0, log_entry)  # Put newest log at the top
 
     return {
         "message": "Agent cycle complete.",
@@ -129,8 +107,26 @@ def run_agent():
     }
 
 
-# --- Command Line Testing ---
+@app.post("/api/approve-actions")
+def approve_actions():
+    """Human-in-the-loop endpoint."""
+    global current_shipments
+    count = 0
+
+    for shipment in current_shipments:
+        if shipment.status == "Pending Approval":
+            shipment.status = "Rerouted (Approved)"
+            shipment.delay_probability = 0.05
+            count += 1
+
+    agent_history.insert(0, {
+        "hypothesis": "Human Operator Override",
+        "decision": "Reviewed and approved AI mitigation plans.",
+        "action_taken": f"Officially rerouted {count} high-risk shipments."
+    })
+
+    return {"message": f"Approved {count} actions.", "updated_shipments": current_shipments}
+
 
 if __name__ == "__main__":
-    print("🚀 Starting Cyber Cypher Backend on port 8000...")
-    uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
+    uvicorn.run("main:app", host="127.0.0.1", port=8000, reload=True)

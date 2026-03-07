@@ -4,27 +4,24 @@ from langchain_core.messages import SystemMessage, HumanMessage
 from langchain_openai import ChatOpenAI
 from langgraph.graph import StateGraph, START, END
 
-# Import the state models we just built
 from state import AgentState, Shipment, Alert
 
-# Load environment variables (Make sure OPENAI_API_KEY is in your .env)
 load_dotenv()
-
-# Initialize the LLM - gpt-4o-mini is perfect for fast, cheap hackathon iterations
 llm = ChatOpenAI(model="gpt-4o-mini", temperature=0)
 
 
-# --- Define the Agent Nodes ---
-
 def observe(state: AgentState):
-    print("\n👀 [OBSERVE] Gathering live logistics and news data...")
+    # SPECIFIC AGENT CALL: Only look at affected shipments
+    at_risk_shipments = [s for s in state.get("shipments", []) if s.status == "At Risk"]
 
-    context = "CURRENT SHIPMENTS:\n"
-    for s in state.get("shipments", []):
-        # Updated to use shipment_id, carrier, eta_hours, and delay_probability
-        context += f"- ID: {s.shipment_id} | Route: {s.origin} -> {s.destination} | Carrier: {s.carrier} | Status: {s.status} | ETA (hrs): {s.eta_hours} | Delay Risk: {s.delay_probability}\n"
+    if not at_risk_shipments:
+        return {"messages": [SystemMessage(content="System normal. No shipments currently at risk.")]}
 
-    context += "\nACTIVE ALERTS:\n"
+    context = "AFFECTED SHIPMENTS AT RISK:\n"
+    for s in at_risk_shipments:
+        context += f"- ID: {s.shipment_id} | Route: {s.origin} -> {s.destination} | Risk: {s.delay_probability}\n"
+
+    context += "\nACTIVE ALERTS CAUSING RISK:\n"
     for a in state.get("alerts", []):
         context += f"- SEVERITY: {a.severity} | Type: {a.type} | Loc: {a.location} | Details: {a.description}\n"
 
@@ -32,56 +29,75 @@ def observe(state: AgentState):
 
 
 def reason(state: AgentState):
-    print("🧠 [REASON] Analyzing risks and forming hypothesis...")
     messages = state.get("messages", [])
+    if "System normal" in messages[0].content:
+        return {"hypothesis": "All systems operational.", "messages": messages}
 
     prompt = HumanMessage(content=(
-        "You are a logistics manager, Based on the system context, identify any risks, bottlenecks, or cascading failures. (explicitly related to logistics)"
-        "Formulate a specific hypothesis about what will go wrong if no action is taken. "
-        "Keep it to 2-3 concise sentences."
+        "Identify the core risk to the affected shipments based on the context. "
+        "Formulate a specific hypothesis about the cascading failures. Keep it to 2 concise sentences."
     ))
-
     response = llm.invoke(messages + [prompt])
-    return {"hypothesis": response.content, "messages": [response]}
+    return {"hypothesis": response.content, "messages": messages + [response]}
 
 
 def decide(state: AgentState):
-    print("⚖️ [DECIDE] Formulating action plan...")
     hypothesis = state.get("hypothesis", "")
     messages = state.get("messages", [])
+    alerts = state.get("alerts", [])
 
+    if hypothesis == "All systems operational.":
+        return {"decision": "Maintain current routes.", "messages": messages}
+
+    # Deterministically find the highest severity among active alerts
+    highest_severity = "Low"
+    for a in alerts:
+        if a.severity == "High":
+            highest_severity = "High"
+            break
+        elif a.severity == "Medium":
+            highest_severity = "Medium"
+
+    # Force the LLM to acknowledge the exact severity level
     prompt = HumanMessage(content=(
         f"Hypothesis: {hypothesis}\n"
-        "Decide how to balance delivery time, operational costs, and partner reliability. "
-        "Formulate a concrete decision (e.g., reroute, adjust schedule, escalate). "
-        "Output ONLY the final decision plan."
+        f"SYSTEM DATA: The current highest alert severity is strictly classified as '{highest_severity}'.\n"
+        "Formulate a mitigation decision (e.g., reroute, switch carrier). \n"
+        "CRITICAL RULE: If the system data says the severity is 'High', you MUST include the exact text '[NEEDS APPROVAL]' in your decision. "
+        "If the system data says the severity is 'Medium' or 'Low', you are authorized to act autonomously and MUST NOT include '[NEEDS APPROVAL]'. "
+        "Output only the final decision plan."
     ))
 
     response = llm.invoke(messages + [prompt])
-    return {"decision": response.content, "messages": [response]}
+    return {"decision": response.content, "messages": messages + [response]}
 
 
 def act(state: AgentState):
-    print("🚀 [ACT] Executing decisions and updating state...")
     decision = state.get("decision", "")
     updated_shipments = state.get("shipments", []).copy()
 
-    action_log = "Monitored situation. No immediate action required."
+    if "Maintain current routes" in decision:
+        return {"action_taken": "Monitored situation. No action needed.", "shipments": updated_shipments}
 
-    if "reroute" in decision.lower() or "divert" in decision.lower():
-        for shipment in updated_shipments:
-            if shipment.status == "In Transit":
-                shipment.status = "Rerouted (Mitigation Active)"
-                # Updated id to shipment_id
-                action_log = f"System automatically rerouted shipment {shipment.shipment_id}."
+    needs_approval = "[NEEDS APPROVAL]" in decision.upper()
+    action_log = ""
+    affected_count = 0
+
+    for shipment in updated_shipments:
+        if shipment.status == "At Risk":
+            affected_count += 1
+            if needs_approval:
+                shipment.status = "Pending Approval"
+                action_log = f"Drafted plans for {affected_count} shipments. Escalated to human operator (HIGH severity)."
+            else:
+                shipment.status = "Rerouted (Auto)"
+                shipment.delay_probability = 0.1
+                action_log = f"Autonomously rerouted {affected_count} shipments to bypass disruption."
 
     return {"action_taken": action_log, "shipments": updated_shipments}
 
 
-# --- Build the LangGraph ---
-
 workflow = StateGraph(AgentState)
-
 workflow.add_node("observe", observe)
 workflow.add_node("reason", reason)
 workflow.add_node("decide", decide)
@@ -93,44 +109,4 @@ workflow.add_edge("reason", "decide")
 workflow.add_edge("decide", "act")
 workflow.add_edge("act", END)
 
-# Compile the graph into a runnable application
 app = workflow.compile()
-
-# --- Command Line Testing ---
-
-if __name__ == "__main__":
-    # 1. Setup Mock Data (Same as state.py)
-    test_shipment = Shipment(
-        id="SHP-90210", origin="Mumbai", destination="Dubai",
-        status="In Transit", eta="2026-03-10",
-        operational_cost=4500.00, partner_reliability=0.85
-    )
-    test_alert = Alert(
-        id="ALT-001", type="Port Strike", location="Dubai",
-        severity="High", description="Complete blockage due to sudden port strike. Major delays expected."
-    )
-
-    initial_state: AgentState = {
-        "messages": [],
-        "shipments": [test_shipment],
-        "alerts": [test_alert],
-        "hypothesis": "",
-        "decision": "",
-        "action_taken": ""
-    }
-
-    # 2. Run the graph
-    print("=== Starting Autonomous Logistics Agent ===")
-
-    # stream() lets us see the output of each node as it finishes
-    for output in app.stream(initial_state):
-        for node_name, state_update in output.items():
-            if node_name == "reason":
-                print(f"\n   -> HYPOTHESIS: {state_update.get('hypothesis')}")
-            elif node_name == "decide":
-                print(f"\n   -> DECISION: {state_update.get('decision')}")
-            elif node_name == "act":
-                print(f"\n   -> ACTION TAKEN: {state_update.get('action_taken')}")
-                print(f"   -> NEW SHIPMENT STATUS: {state_update.get('shipments')[0].status}")
-
-    print("\n✅ Cycle Complete!")
