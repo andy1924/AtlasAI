@@ -5,14 +5,21 @@ from langgraph.graph.message import AnyMessage, add_messages
 
 # --- Pydantic Models for Data Validation ---
 
+# Replace the Shipment class in backend/state.py
+
 class Shipment(BaseModel):
-    id: str
+    shipment_id: str
     origin: str
     destination: str
-    status: str = Field(description="Current state: 'In Transit', 'Delayed', 'Rerouted'")
-    eta: str
+    carrier: str
+    weight_kg: float
+    distance_km: float
+    eta_hours: int
+    status: str
+    delay_probability: float
     operational_cost: float
-    partner_reliability: float = Field(description="Score from 0.0 to 1.0")
+    partner_reliability: float
+    timestamp: str
 
 
 class Alert(BaseModel):

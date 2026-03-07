@@ -18,21 +18,30 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# --- Global In-Memory State (Perfect for Hackathons) ---
+# Add these imports at the top of backend/main.py if not there
+import json
+import os
 
-current_shipments = [
-    Shipment(
-        id="SHP-90210", origin="Mumbai", destination="Dubai",
-        status="In Transit", eta="2026-03-10",
-        operational_cost=4500.00, partner_reliability=0.85
-    ),
-    Shipment(
-        id="SHP-55412", origin="Shanghai", destination="Rotterdam",
-        status="In Transit", eta="2026-03-25",
-        operational_cost=12000.00, partner_reliability=0.92
-    )
-]
+# --- Load Global In-Memory State from JSON ---
 
+# This dynamically finds your maindata folder regardless of where you run the script from
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+JSON_PATH = os.path.join(BASE_DIR, "maindata", "stimulated_shipments.json")
+
+current_shipments = []
+
+try:
+    with open(JSON_PATH, "r") as file:
+        data = json.load(file)
+        # Convert raw JSON dicts into Pydantic Shipment objects
+        current_shipments = [Shipment(**item) for item in data]
+    print(f"✅ Successfully loaded {len(current_shipments)} shipments from JSON.")
+except FileNotFoundError:
+    print(f"❌ Error: Could not find JSON file at {JSON_PATH}")
+except Exception as e:
+    print(f"❌ Error parsing JSON: {e}")
+
+# (Keep your current_alerts and agent_history lists exactly as they are)
 current_alerts = []
 agent_history = []  # Stores the reasoning logs for the UI
 

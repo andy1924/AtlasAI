@@ -19,11 +19,10 @@ llm = ChatOpenAI(model="gpt-4o-mini", temperature=0)
 def observe(state: AgentState):
     print("\n👀 [OBSERVE] Gathering live logistics and news data...")
 
-    # In a full app, you would fetch from APIs here.
-    # For now, we format the state data for the LLM.
     context = "CURRENT SHIPMENTS:\n"
     for s in state.get("shipments", []):
-        context += f"- ID: {s.id} | Route: {s.origin} -> {s.destination} | Status: {s.status} | ETA: {s.eta}\n"
+        # Updated to use shipment_id, carrier, eta_hours, and delay_probability
+        context += f"- ID: {s.shipment_id} | Route: {s.origin} -> {s.destination} | Carrier: {s.carrier} | Status: {s.status} | ETA (hrs): {s.eta_hours} | Delay Risk: {s.delay_probability}\n"
 
     context += "\nACTIVE ALERTS:\n"
     for a in state.get("alerts", []):
@@ -67,14 +66,14 @@ def act(state: AgentState):
     decision = state.get("decision", "")
     updated_shipments = state.get("shipments", []).copy()
 
-    # Simple mock execution: If the LLM decided to reroute, update the status
     action_log = "Monitored situation. No immediate action required."
 
     if "reroute" in decision.lower() or "divert" in decision.lower():
         for shipment in updated_shipments:
             if shipment.status == "In Transit":
                 shipment.status = "Rerouted (Mitigation Active)"
-                action_log = f"System automatically rerouted shipment {shipment.id}."
+                # Updated id to shipment_id
+                action_log = f"System automatically rerouted shipment {shipment.shipment_id}."
 
     return {"action_taken": action_log, "shipments": updated_shipments}
 
