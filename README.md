@@ -5,6 +5,7 @@
 ### Autonomous Logistics Intelligence Layer
 
 [![Python](https://img.shields.io/badge/Python-3.12+-3776AB?style=for-the-badge&logo=python&logoColor=white)](https://python.org)
+[![Next.js](https://img.shields.io/badge/Next.js-15-000000?style=for-the-badge&logo=nextdotjs&logoColor=white)](https://nextjs.org)
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.100+-009688?style=for-the-badge&logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com)
 [![LangGraph](https://img.shields.io/badge/LangGraph-Agent-1C3C3C?style=for-the-badge&logo=chainlink&logoColor=white)](https://langchain.com)
 [![ChromaDB](https://img.shields.io/badge/ChromaDB-RAG_Memory-E05A2B?style=for-the-badge)](https://trychroma.com)
@@ -13,9 +14,9 @@
 
 <br/>
 
-*An autonomous AI agent that monitors global logistics disruptions in real time, reasons about cascading failures, retrieves historical Plans of Action from vector memory, and either self-executes mitigations or escalates to a human operator — all from a single live dashboard.*
+*A full-stack autonomous AI agent that proactively detects logistics disruptions, reasons about cascading failures, retrieves outcome-weighted historical Plans of Action from vector memory, and either self-executes mitigations or escalates to a human operator — then evaluates whether its decisions actually worked, closing the full observe → reason → decide → act → learn loop.*
 
-[Features](#-features) • [Architecture](#-architecture) • [Installation](#-installation) • [API Reference](#-api-reference) • [Agent Loop](#-agent-loop) • [Memory System](#-memory--rag-system) • [Roadmap](#️-roadmap)
+[Features](#-features) • [Architecture](#-architecture) • [Installation](#-installation) • [Agent Loop](#-agent-loop) • [API Reference](#-api-reference) • [Memory System](#-memory--rag-system) • [Dashboard](#-dashboard)
 
 </div>
 
@@ -23,9 +24,9 @@
 
 ## 📌 Overview
 
-AtlasAI is a full-stack autonomous logistics intelligence system. When a disruption event is detected — a port strike, hurricane, or geopolitical conflict — the system's LangGraph agent automatically reasons about affected shipments, retrieves similar past incidents from a ChromaDB vector memory, and formulates a mitigation plan. Low and medium severity events are handled autonomously; high severity events are escalated to a human operator for approval.
+AtlasAI is a full-stack autonomous logistics intelligence system built around a 4-node LangGraph agent. When a disruption is detected — whether injected manually or auto-flagged by the proactive observer — the agent reasons about root causes and cascading impact, retrieves the closest historical Plan of Action from ChromaDB using semantic similarity, chooses from a structured action menu, and either executes the mitigation autonomously or escalates it based on severity and confidence.
 
-When the operator approves, the action is embedded back into ChromaDB — making the system smarter with every incident.
+After actions are taken, a dedicated outcome evaluator checks whether each intervention actually reduced delay probability. Failures are written back into ChromaDB so the agent improves with every incident cycle.
 
 ---
 
@@ -33,14 +34,17 @@ When the operator approves, the action is embedded back into ChromaDB — making
 
 | Feature | Description |
 |---|---|
-| 🤖 Autonomous AI Agent | 4-node LangGraph loop: Observe → Reason → Decide → Act |
-| 🧠 RAG Vector Memory | ChromaDB stores and retrieves historical Plans of Action via OpenAI embeddings |
-| 👤 Human-in-the-Loop | HIGH severity events pause for human approval before execution |
-| 🔄 Self-Learning | Approved human decisions are written back to ChromaDB for future recall |
-| 🌐 OSINT News Feed | Live MediaStack API monitors disruptions across 80+ countries |
-| ⚡ Chaos Injection | Manually trigger disruption events via the dashboard to simulate scenarios |
-| 📊 Global Shipment Dashboard | Real-time tracking of 1,000+ shipments with live risk status |
-| 🗺️ Disruption Radar | Live feed of geopolitical and natural events matched to shipment routes |
+| 🔭 Proactive Observer | Auto-flags `At Risk` shipments from 4 live signals before any chaos is injected |
+| 🤖 LangGraph Agent | 4-node graph: Observe → Reason → Decide → Act with full state management |
+| 🎯 Structured Action Menu | Agent chooses: `REROUTE` / `HOLD` / `SWITCH_CARRIER` / `EXPEDITE` / `ESCALATE` / `MONITOR` |
+| 📊 Confidence Scoring | Agent outputs 0–100% confidence; decisions below 45% auto-escalate to human |
+| 🧠 Outcome-Weighted RAG | ChromaDB retrieval prioritises `outcome: success` records over failed strategies |
+| 🔄 Full Learn Loop | Outcome evaluator checks interventions, writes failures back to ChromaDB memory |
+| 👤 Human-in-the-Loop | HIGH severity or low-confidence decisions pause for operator approval |
+| 📡 Carrier Intelligence | Live reliability scores calculated from real delay data across all shipments |
+| 🌐 OSINT News Feed | MediaStack API monitors 80+ countries for natural and geopolitical disruptions |
+| ⚡ Chaos Simulation | 6 pre-built scenarios (port bombing, hurricane, piracy, strike, carrier degradation…) |
+| 📋 Full Audit Trail | Timestamped agent history with confidence, action type, affected count, autonomous flag |
 
 ---
 
@@ -50,20 +54,24 @@ When the operator approves, the action is embedded back into ChromaDB — making
 AtlasAI/
 │
 ├── backend/
-│   ├── main.py               # FastAPI app — all REST endpoints
-│   ├── agent.py              # LangGraph agent (Observe/Reason/Decide/Act)
-│   ├── memory.py             # ChromaDB RAG memory — seed, search, learn
-│   ├── state.py              # Pydantic models: Shipment, Alert, AgentState
-│   ├── newsEngine.py         # MediaStack OSINT feed & disruption filter
+│   ├── main.py               # FastAPI app — 8 REST endpoints, carrier stats, outcome eval
+│   ├── agent.py              # LangGraph agent — proactive observer + 4-node graph
+│   ├── memory.py             # ChromaDB RAG — seed, outcome-weighted search, learn, mark
+│   ├── state.py              # Pydantic models: Shipment, Alert, CarrierStats, AgentState
+│   ├── newsEngine.py         # MediaStack OSINT feed & disruption keyword filter
 │   ├── chaos_engine.py       # Disruption event generator
 │   └── riskAnalysis.py       # Shipment risk scoring
 │
+├── frontend/
+│   └── app/
+│       └── page.tsx          # Next.js dashboard — tabbed panels, confidence meter, outcome eval
+│
 ├── maindata/
-│   ├── simulated_shipments.json   # 1,000+ simulated shipments
+│   ├── simulated_shipments.json   # 1,000 simulated shipments
 │   └── LogisticSimulator.py       # Shipment data generator
 │
-├── chroma_db/                # Auto-generated local ChromaDB vector store
-├── .env                      # API keys (never commit this)
+├── backend/chroma_db/        # Auto-generated ChromaDB vector store (persisted locally)
+├── .env                      # API keys — never commit
 ├── requirements.txt
 └── README.md
 ```
@@ -72,71 +80,74 @@ AtlasAI/
 
 ## 🏗️ Architecture
 
-### System Flow
+### Full System Flow
 
 ```
-  [MediaStack OSINT]           [Frontend Dashboard]
-        │                             │
-        ▼                             ▼ (Trigger Chaos Event)
-  newsEngine.py            POST /api/trigger-chaos
-        │                             │
-        └──────────┬──────────────────┘
-                   ▼
+  [MediaStack OSINT]        [Frontend: TRIGGER EVENT]     [Proactive Signals]
+        │                           │                            │
+        ▼                           ▼                            ▼
+  newsEngine.py         POST /api/trigger-chaos        auto_flag_at_risk()
+        │                           │                  (carrier reliability,
+        └──────────┬────────────────┘                   ETA, delay_prob,
+                   ▼                                    weight+distance)
           POST /api/run-agent
                    │
-        ┌──────────▼──────────┐
-        │   LangGraph Agent   │
-        │  ┌───────────────┐  │
-        │  │   OBSERVE     │  │  ← Scans At Risk shipments & active alerts
-        │  └──────┬────────┘  │
-        │  ┌──────▼────────┐  │
-        │  │    REASON     │  │  ← GPT-4o-mini formulates failure hypothesis
-        │  └──────┬────────┘  │
-        │  ┌──────▼────────┐  │
-        │  │    DECIDE     │  │  ← RAG retrieves historical POA from ChromaDB
-        │  └──────┬────────┘  │
-        │  ┌──────▼────────┐  │
-        │  │      ACT      │  │  ← Auto-executes or flags [NEEDS APPROVAL]
-        │  └───────────────┘  │
-        └─────────────────────┘
+      ┌────────────▼────────────┐
+      │     LangGraph Agent     │
+      │  ┌─────────────────┐    │
+      │  │    OBSERVE      │    │  ← Runs auto_flag_at_risk(), builds context
+      │  └────────┬────────┘    │
+      │  ┌────────▼────────┐    │
+      │  │     REASON      │    │  ← GPT-4o-mini: root cause + cascading impact
+      │  └────────┬────────┘    │
+      │  ┌────────▼────────┐    │
+      │  │     DECIDE      │    │  ← RAG retrieves outcome-weighted POA
+      │  │  (ChromaDB)     │    │     GPT picks action + outputs confidence %
+      │  └────────┬────────┘    │
+      │  ┌────────▼────────┐    │
+      │  │      ACT        │    │  ← Applies action-specific status + cost/ETA changes
+      │  └─────────────────┘    │
+      └────────────┬────────────┘
                    │
-          ┌────────┴────────┐
-          ▼                 ▼
-   Auto-Rerouted      Pending Approval
-  (Medium / Low)       (High Severity)
-                            │
-                  POST /api/approve-actions
-                            │
-                   ┌────────▼────────┐
-                   │  ChromaDB Learn │  ← New POA embedded for future use
-                   └─────────────────┘
+       ┌───────────┴────────────┐
+       ▼                        ▼
+  Confidence ≥ 45%         Confidence < 45%
+  + Medium/Low severity    OR High severity
+       │                        │
+  Auto-execute            [NEEDS APPROVAL]
+  REROUTE / HOLD /        → Pending Approval
+  SWITCH_CARRIER /                │
+  EXPEDITE / MONITOR      POST /api/approve-actions
+                                  │
+                       ┌──────────▼──────────┐
+                       │   ChromaDB Learn    │  ← add_learned_action(outcome=success)
+                       └─────────────────────┘
+                                  │
+                       POST /api/evaluate-outcomes
+                                  │
+                       ┌──────────▼──────────┐
+                       │  Outcome Evaluator  │  ← Checks delay_prob vs threshold
+                       │                     │     Writes failures → mark_outcome()
+                       └─────────────────────┘
 ```
 
 ### Core Modules
 
 #### `agent.py` — LangGraph Agent
-The decision engine, built as a compiled `StateGraph` with four sequential nodes:
 
-| Node | Role |
+| Node | What it does |
 |---|---|
-| `observe` | Collects all `At Risk` shipments and active alerts into structured context |
-| `reason` | Sends context to GPT-4o-mini to produce a 2-sentence failure hypothesis |
-| `decide` | Retrieves the most similar historical POA from ChromaDB via RAG, then instructs GPT-4o-mini to formulate a mitigation plan. Tags `[NEEDS APPROVAL]` for HIGH severity |
-| `act` | Executes the decision — sets shipment status to `Rerouted (Auto)` or `Pending Approval` |
+| `observe` | Runs `auto_flag_at_risk()` — scores shipments on 4 signals (carrier reliability < 0.70, ETA < 8h, delay_probability > 0.65, heavy+long route). Builds structured context string. |
+| `reason` | GPT-4o-mini identifies root cause, cascading impact, and patterns (e.g. multiple shipments from same degraded carrier). |
+| `decide` | Calls `get_past_poa()` for outcome-weighted RAG retrieval. GPT selects from 6-action menu and outputs a `Confidence: N` score. If confidence < 45%, auto-escalates regardless of severity. |
+| `act` | Applies action-specific mutations: HOLD adds 24h ETA, EXPEDITE subtracts 12h and adds 15% cost, SWITCH_CARRIER sets reliability to 0.92, REROUTE sets delay to 0.10. |
 
 #### `memory.py` — ChromaDB RAG System
-The agent's long-term memory. Uses `text-embedding-3-small` to convert alert descriptions into vectors.
 
-- Pre-seeded with 6 historical POAs covering High, Medium, and Low severity scenarios
-- **`get_past_poa(alert_description)`** — similarity search, returns the closest historical plan
-- **`add_learned_action(...)`** — called after human approval to write new experiences into the DB
-- Persisted locally at `backend/chroma_db/`
-
-#### `main.py` — FastAPI Backend
-Serves the frontend and manages global in-memory state for shipments and alerts. Loads 1,000+ shipments from `simulated_shipments.json` on startup.
-
-#### `newsEngine.py` — OSINT Feed
-Polls MediaStack API for live news, filters by disruption keywords, and matches article locations against the active shipment dataset.
+- **8 pre-seeded POAs** tagged with `action_type` and `outcome: success`
+- **`get_past_poa(desc)`** — returns top-k results, filters for `outcome: success`, returns `poa`, `action_type`, and `confidence_hint`
+- **`add_learned_action(...)`** — called on human approval, embeds experience with outcome tag
+- **`mark_outcome(...)`** — called by outcome evaluator on failures, adds failure record so future retrievals deprioritise that strategy
 
 #### `state.py` — Data Models
 
@@ -144,17 +155,24 @@ Polls MediaStack API for live news, filters by disruption keywords, and matches 
 class Shipment(BaseModel):
     shipment_id, origin, destination, carrier
     weight_kg, distance_km, eta_hours
-    status, delay_probability
-    operational_cost, partner_reliability, timestamp
+    status, delay_probability, operational_cost
+    partner_reliability, timestamp
 
 class Alert(BaseModel):
     id, type, location
     severity   # "High" | "Medium" | "Low"
     description
 
+class CarrierStats(BaseModel):
+    carrier, total_shipments, delayed_shipments
+    reliability_score  # 0.0–1.0
+
 class AgentState(TypedDict):
     messages, shipments, alerts
     hypothesis, decision, action_taken
+    confidence     # NEW: 0–100
+    action_type    # NEW: REROUTE | HOLD | SWITCH_CARRIER | EXPEDITE | ESCALATE | MONITOR
+    severity_level # NEW: High | Medium | Low | None
 ```
 
 ---
@@ -164,9 +182,9 @@ class AgentState(TypedDict):
 ### Prerequisites
 
 - Python **3.12+**
-- `pip` or `conda`
-- [OpenAI API key](https://platform.openai.com/api-keys) — powers the agent (`gpt-4o-mini`) and embeddings (`text-embedding-3-small`)
-- [MediaStack API key](https://mediastack.com/) — powers the live OSINT news feed
+- Node.js **18+** (for the Next.js frontend)
+- [OpenAI API key](https://platform.openai.com/api-keys) — `gpt-4o-mini` + `text-embedding-3-small`
+- [MediaStack API key](https://mediastack.com/) — live OSINT news feed
 
 ### 1. Clone the Repository
 
@@ -175,21 +193,28 @@ git clone https://github.com/andy1924/AtlasAI.git
 cd AtlasAI
 ```
 
-### 2. Install Dependencies
+### 2. Install Backend Dependencies
 
 ```bash
 pip install -r requirements.txt
 ```
 
-### 3. Configure Environment Variables
+### 3. Install Frontend Dependencies
+
+```bash
+cd frontend
+npm install
+```
+
+### 4. Configure Environment Variables
 
 Create a `.env` file in the project root:
 
 ```env
-# OpenAI — used by agent.py (GPT-4o-mini) and memory.py (text-embedding-3-small)
+# OpenAI — agent reasoning (GPT-4o-mini) + vector embeddings (text-embedding-3-small)
 OPENAI_API_KEY="sk-..."
 
-# MediaStack — used by newsEngine.py for live OSINT disruption news
+# MediaStack — live OSINT disruption news feed
 MEDIA_STACK_API="your_mediastack_api_key_here"
 ```
 
@@ -198,31 +223,47 @@ MEDIA_STACK_API="your_mediastack_api_key_here"
 | `OPENAI_API_KEY` | ✅ Yes | `agent.py`, `memory.py` | [platform.openai.com](https://platform.openai.com/api-keys) |
 | `MEDIA_STACK_API` | ✅ Yes | `newsEngine.py` | [mediastack.com](https://mediastack.com/) |
 
-> ⚠️ **Never commit your `.env` file.** Add `.env` to your `.gitignore`.
+> ⚠️ **Never commit your `.env` file.** It is already listed in `.gitignore`.
 
-### 4. Start the Backend
+### 5. Start the Backend
 
 ```bash
 cd backend
 python main.py
 ```
 
-The API will be live at `http://127.0.0.1:8000`. ChromaDB will auto-initialize and seed its knowledge base on first run:
+On first run, ChromaDB initialises and seeds 8 historical POAs automatically:
 
 ```
 📚 Initializing AtlasAI ChromaDB Memory...
 🌱 Seeding initial Knowledge Base into ChromaDB...
+✅ Seeded 8 historical POAs.
 ✅ Successfully loaded 1000 shipments.
 INFO: Uvicorn running on http://127.0.0.1:8000
 ```
+
+### 6. Start the Frontend
+
+```bash
+cd frontend
+npm run dev
+```
+
+Dashboard will be live at `http://localhost:3000`.
 
 ---
 
 ## 🔧 Agent Loop
 
-### Step 1 — Inject a Chaos Event
+The complete loop from detection to learning runs in 5 steps:
 
-Use the **"TRIGGER EVENT"** button on the dashboard, or call the API directly:
+### Step 1 — Proactive Detection (automatic)
+
+Every time the agent runs, `auto_flag_at_risk()` scans all `In Transit` shipments and flags those exceeding a composite risk score across 4 signals — no manual event injection needed.
+
+### Step 2 — Inject a Chaos Event (optional, for demos)
+
+Use the **TRIGGER EVENT** button on the dashboard, or call directly:
 
 ```bash
 curl -X POST http://127.0.0.1:8000/api/trigger-chaos \
@@ -235,36 +276,59 @@ curl -X POST http://127.0.0.1:8000/api/trigger-chaos \
   }'
 ```
 
-All shipments with `origin` or `destination` matching `Kellyland` are immediately flagged `At Risk` with `delay_probability: 0.95`.
-
-### Step 2 — Run the Agent
+### Step 3 — Run the Agent
 
 ```bash
 curl -X POST http://127.0.0.1:8000/api/run-agent
 ```
 
-The agent executes its full loop and returns a structured log:
+Returns a structured log with hypothesis, decision, confidence score, action type, and affected shipment count:
 
 ```json
 {
-  "message": "Agent cycle complete.",
   "log": {
-    "hypothesis": "The port strike at Kellyland has halted all loading operations, causing cascading delays for carriers relying on this hub.",
-    "decision": "Action: Reroute affected shipments via alternate inland hub.\nReasoning: Based on historical precedent where a similar port strike required emergency rerouting... [NEEDS APPROVAL]",
-    "action_taken": "Drafted mitigation plan for 3 shipments. Escalated to human operator due to HIGH severity."
+    "timestamp": "2026-03-08T14:23:11",
+    "hypothesis": "The port strike at Kellyland disrupts 3 carriers relying on this hub, with cascading ETA breaches for downstream partners.",
+    "decision": "Action: ESCALATE\nConfidence: 82\nReasoning: Based on historical precedent where a port bombing required halting maritime loading... [NEEDS APPROVAL]",
+    "action_taken": "⚠️ Drafted ESCALATE plan for 3 shipment(s). Escalated to human operator (HIGH severity).",
+    "confidence": 82,
+    "action_type": "ESCALATE",
+    "severity_level": "High",
+    "shipments_affected": 3,
+    "autonomous": false
   }
 }
 ```
 
-### Step 3 — Approve High Severity Actions
-
-When the agent flags `[NEEDS APPROVAL]`, shipments are held at `Pending Approval`. The human operator reviews and confirms:
+### Step 4 — Approve (High Severity / Low Confidence only)
 
 ```bash
 curl -X POST http://127.0.0.1:8000/api/approve-actions
 ```
 
-This promotes shipments to `Rerouted (Approved)`, sets `delay_probability: 0.05`, and **writes the approved action into ChromaDB** so the agent can recall it in future incidents.
+Promotes `Pending Approval` → `Rerouted (Approved)`, sets `delay_probability: 0.05`, and writes the approved action into ChromaDB tagged `outcome: success`.
+
+### Step 5 — Evaluate Outcomes (closes the Learn loop)
+
+```bash
+curl -X POST http://127.0.0.1:8000/api/evaluate-outcomes
+```
+
+Compares each actioned shipment's current `delay_probability` against per-action thresholds. Failures are written to ChromaDB via `mark_outcome()` so the agent deprioritises that strategy next time.
+
+```json
+{
+  "message": "Outcome evaluation complete. 2 successes, 1 failures.",
+  "results": {
+    "successful": 2,
+    "failed": 1,
+    "details": [
+      { "shipment_id": "SHP-492664", "status": "Rerouted (Auto)", "delay_probability": 0.10, "outcome": "✅ SUCCESS" },
+      { "shipment_id": "SHP-965162", "status": "On Hold", "delay_probability": 0.41, "outcome": "❌ FAILED — delay still elevated" }
+    ]
+  }
+}
+```
 
 ---
 
@@ -272,58 +336,81 @@ This promotes shipments to `Rerouted (Approved)`, sets `delay_probability: 0.05`
 
 | Method | Endpoint | Description |
 |---|---|---|
-| `GET` | `/api/shipments` | Returns all shipments with current status |
-| `GET` | `/api/alerts` | Returns all active disruption alerts |
-| `GET` | `/api/news` | Returns live OSINT news events from MediaStack |
-| `POST` | `/api/trigger-chaos` | Injects a disruption event and flags at-risk shipments |
-| `POST` | `/api/run-agent` | Executes the full LangGraph Observe→Reason→Decide→Act cycle |
-| `POST` | `/api/approve-actions` | Approves pending HIGH severity actions + triggers ChromaDB learn loop |
+| `GET` | `/api/shipments` | All shipments with current status |
+| `GET` | `/api/alerts` | All active disruption alerts |
+| `GET` | `/api/news` | Live OSINT events from MediaStack |
+| `GET` | `/api/carrier-reliability` | Live reliability scores per carrier, calculated from delay data |
+| `GET` | `/api/agent-history` | Full timestamped audit trail of all agent decisions |
+| `POST` | `/api/trigger-chaos` | Inject a disruption event, flag matching shipments `At Risk` |
+| `POST` | `/api/run-agent` | Run the full Observe → Reason → Decide → Act cycle |
+| `POST` | `/api/approve-actions` | Human approval — execute pending actions + trigger ChromaDB learn |
+| `POST` | `/api/evaluate-outcomes` | Check intervention success, write failures to ChromaDB memory |
 
 ---
 
 ## 🧠 Memory & RAG System
 
-The `memory.py` module provides the agent with persistent, searchable experience using OpenAI's `text-embedding-3-small` model and a local ChromaDB vector store.
+The `memory.py` module gives the agent persistent, outcome-aware experience using OpenAI `text-embedding-3-small` and a local ChromaDB vector store.
 
-### Pre-Seeded Knowledge Base
+### Pre-Seeded Knowledge Base (8 POAs)
 
-| Severity | Scenario | Plan of Action |
-|---|---|---|
-| 🔴 High | Port bombing — total maritime halt | Halt all maritime loading, reroute critical shipments via emergency air freight |
-| 🔴 High | Category 5 hurricane at hub | Divert all inbound transit to inland hubs, shelter high-weight inventory |
-| 🟡 Medium | Piracy threat at sea | Reroute vessels 200 nautical miles offshore |
-| 🟡 Medium | Carrier operational degradation | Transfer high-priority shipments to carriers with reliability score > 0.90 |
-| 🟢 Low | Highway traffic congestion | Reroute ground transport to secondary highways, accept minor ETA increase |
-| 🟢 Low | Minor customs delay | Monitor only, send automated ETA update to end-customer |
+| Severity | Action Type | Scenario | Plan of Action |
+|---|---|---|---|
+| 🔴 High | ESCALATE | Port bombing — maritime halt | Halt loading, reroute via emergency air freight |
+| 🔴 High | ESCALATE | Category 5 hurricane | Divert to inland hubs, shelter high-weight inventory |
+| 🟡 Medium | REROUTE | Piracy threat | Reroute vessels 200 nautical miles offshore |
+| 🟡 Medium | SWITCH_CARRIER | Carrier degradation | Transfer to carriers with reliability > 0.90 |
+| 🟡 Medium | HOLD | Port workers strike | Hold outbound 48h, notify downstream partners |
+| 🟡 Medium | EXPEDITE | High-priority SLA at risk | Upgrade to express lane, accept 15% cost increase |
+| 🟢 Low | REROUTE | Highway congestion | Secondary highway reroute, +3h ETA accepted |
+| 🟢 Low | MONITOR | Minor customs delay | Monitor only, send automated ETA update |
 
-### The Learn Loop
+### Outcome-Weighted Retrieval
 
-Every human-approved action becomes a permanent memory:
+`get_past_poa()` fetches top-3 similar results, filters for `outcome: success`, and returns a `confidence_hint` based on how many successful precedents matched:
 
-```
-Human Approves → add_learned_action(description, severity, action)
-                          │
-                          ▼
-              ChromaDB ← New vector document
-                          │
-                          ▼
-         Retrieved by agent in next similar incident
+```python
+# ≥2 successful matches → confidence_hint: 85
+# 1 successful match   → confidence_hint: 65
+# 0 successful matches → confidence_hint: 40 (may trigger auto-escalate)
 ```
 
-### Verify Memory
-
-```bash
-python backend/memory.py
-```
+### The Full Learn Loop
 
 ```
-📚 Initializing AtlasAI ChromaDB Memory...
-📄 Total Memories Stored: 6
-🔍 Testing Retrieval (Searching for 'Traffic Jam')...
-💡 Retrieved Plan of Action:
-   -> Autonomously rerouted ground transport to secondary highways...
-✅ Memory Module is fully operational!
+Agent Acts → Outcome Evaluator Runs
+                    │
+        ┌───────────┴───────────┐
+        ▼                       ▼
+   ✅ SUCCESS              ❌ FAILURE
+        │                       │
+add_learned_action(          mark_outcome(
+  outcome="success")           outcome="failure")
+        │                       │
+        └───────────┬───────────┘
+                    ▼
+         ChromaDB updated
+         Future retrievals weighted accordingly
 ```
+
+---
+
+## 📊 Dashboard
+
+The Next.js frontend exposes the full agent lifecycle in a single dark-themed dashboard:
+
+**Top bar** — Stats panel showing total tracked, at-risk count (pulses red when active), pending approvals, and resolved shipments.
+
+**Shipment table** — Sorted by risk priority (At Risk → Pending → On Hold → Rerouted). Each row shows a delay probability mini-bar and colour-coded status badge for all 7 action states.
+
+**Tabbed right panel:**
+- **🤖 Agent Log** — Full decision audit trail per cycle. Each entry shows action type badge, hypothesis, execution result, confidence meter bar, affected count, and severity level.
+- **📦 Carriers** — Live carrier reliability panel with progress bars. Cards turn red when reliability drops below 70%.
+- **📊 Outcomes** — Outcome evaluation results showing success/failure counts and per-shipment details.
+
+**Human approval banner** — Appears automatically when `Pending Approval` shipments exist, showing agent reasoning and a pulsing VERIFY & EXECUTE button.
+
+**Chaos dropdown** — 6 pre-built scenarios across High / Medium / Low severity.
 
 ---
 
@@ -335,17 +422,20 @@ python backend/memory.py
 | `langgraph` | Agent graph orchestration |
 | `langchain-openai` | GPT-4o-mini LLM + text-embedding-3-small |
 | `langchain-chroma` | ChromaDB vector store integration |
-| `pydantic` | Data validation — Shipment, Alert, AgentState |
+| `pydantic` | Data validation — Shipment, Alert, CarrierStats, AgentState |
 | `python-dotenv` | `.env` key loading |
 | `requests` | MediaStack HTTP client |
 | `faker` | Synthetic shipment data generation |
+| `next` | React frontend framework |
+| `typescript` | Type safety across all frontend interfaces |
+| `tailwindcss` | Dashboard styling |
 
 ---
 
 ## 🛠️ Troubleshooting
 
 **`openai.AuthenticationError: Incorrect API key`**
-→ Add `OPENAI_API_KEY="sk-..."` to your `.env` file.
+→ Add `OPENAI_API_KEY="sk-..."` to your `.env` file in the project root.
 
 **`ValueError: MEDIA_STACK_API key not found`**
 → Add `MEDIA_STACK_API="..."` to your `.env` file.
@@ -354,21 +444,28 @@ python backend/memory.py
 → Run `python main.py` from inside the `backend/` directory, not the project root.
 
 **ChromaDB not persisting between runs**
-→ The `chroma_db/` folder is created automatically next to `memory.py`. Ensure that directory is writable and not inside a read-only mount.
+→ The `chroma_db/` folder is auto-created next to `memory.py`. Ensure the `backend/` directory is writable.
 
-**Agent always responds "System normal. No shipments currently at risk."**
-→ No shipments are flagged `At Risk`. Call `POST /api/trigger-chaos` first to inject a disruption event.
+**Agent always responds "System normal"**
+→ No shipments are `At Risk`. Either trigger a chaos event via the dashboard, or check that `auto_flag_at_risk()` has In Transit shipments to scan (delivered shipments are skipped).
+
+**Frontend can't reach backend**
+→ Ensure `python main.py` is running on port 8000 before starting the Next.js dev server. CORS is open to all origins by default.
 
 ---
 
 ## 🗺️ Roadmap
 
+- [x] Proactive shipment risk flagging (multi-signal observer)
+- [x] Structured action menu with confidence scoring
+- [x] Outcome evaluation + ChromaDB failure tagging
+- [x] Live carrier reliability tracker
+- [x] Full agent audit trail with timestamps
 - [ ] Connect to real carrier APIs (FedEx, DHL, Maersk)
-- [ ] Persistent shipment state with PostgreSQL or Redis
-- [ ] Confidence scoring on RAG-retrieved POAs
+- [ ] Persistent state with PostgreSQL or Redis
+- [ ] Slack / email notifications for HIGH severity escalations
 - [ ] Multi-agent coordination for large-scale disruptions
-- [ ] Slack / email operator notifications for HIGH severity escalations
-- [ ] Docker + deployment guide
+- [ ] Docker + one-command deployment guide
 
 ---
 
@@ -386,8 +483,20 @@ python backend/memory.py
 
 This project is licensed under the **MIT License** — see the [LICENSE](LICENSE) file for details.
 
+---
+
+## 👤 Author
+
+**Arnav** - AI/ML Lead <br>
+**Sarvesh** - Backend Lead <br>
+**Atharva** - Frontend Lead <br>
+
+For issues, suggestions, or questions, please [open a GitHub issue](https://github.com/andy1924/AtlasAI/issues).
+
+---
+
 <div align="center">
 
-**Version 2.0.0** · Last Updated March 2026 · Active Development
+**Version 3.0.0** · Last Updated March 2026 · Active Development
 
 </div>

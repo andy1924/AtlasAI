@@ -4,12 +4,14 @@ import uvicorn
 from pydantic import BaseModel
 import json
 import os
+from datetime import datetime
+
 from newsEngine import get_latest_news
-from memory import add_learned_action
-from state import Shipment, Alert, AgentState
+from memory import add_learned_action, mark_outcome
+from state import Shipment, Alert, AgentState, CarrierStats
 from agent import app as agent_app
 
-app = FastAPI(title="Cyber Cypher Logistics API")
+app = FastAPI(title="AtlasAI Logistics API")
 
 app.add_middleware(
     CORSMiddleware,
@@ -19,24 +21,49 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# --- Load Global In-Memory State from JSON ---
+# ─────────────────────────────────────────────
+# LOAD SHIPMENTS ON STARTUP
+# ─────────────────────────────────────────────
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 JSON_PATH = os.path.join(BASE_DIR, "maindata", "simulated_shipments.json")
 
-current_shipments = []
-current_alerts = []
-agent_history = []
+current_shipments: list[Shipment] = []
+current_alerts: list[Alert] = []
+agent_history: list[dict] = []
+
+# Carrier stats — built from shipment data, updated live
+carrier_stats: dict[str, CarrierStats] = {}
 
 try:
-    with open(JSON_PATH, "r", encoding="utf-8") as file:
+    with open(JSON_PATH, "r", encoding="utf-8-sig") as file:
         data = json.load(file)
         current_shipments = [Shipment(**item) for item in data]
     print(f"✅ Successfully loaded {len(current_shipments)} shipments.")
 except Exception as e:
     print(f"❌ Error loading JSON: {e}")
 
+# Build initial carrier stats from shipment data
+def rebuild_carrier_stats():
+    global carrier_stats
+    carrier_stats = {}
+    for s in current_shipments:
+        if s.carrier not in carrier_stats:
+            carrier_stats[s.carrier] = CarrierStats(carrier=s.carrier)
+        carrier_stats[s.carrier].total_shipments += 1
+        if s.delay_probability > 0.50:
+            carrier_stats[s.carrier].delayed_shipments += 1
+    for name, stats in carrier_stats.items():
+        if stats.total_shipments > 0:
+            stats.reliability_score = round(
+                1 - (stats.delayed_shipments / stats.total_shipments), 3
+            )
 
-# --- API Endpoints ---
+rebuild_carrier_stats()
+
+
+# ─────────────────────────────────────────────
+# ENDPOINTS
+# ─────────────────────────────────────────────
 
 @app.get("/api/shipments")
 def get_shipments():
@@ -48,10 +75,46 @@ def get_alerts():
     return {"alerts": current_alerts}
 
 
+@app.get("/api/news")
+def get_news():
+    return {"news": cached_news}
+
+
+@app.get("/api/agent-history")
+def get_agent_history():
+    """Returns the full agent decision audit trail."""
+    return {"history": agent_history}
+
+
+@app.get("/api/carrier-reliability")
+def get_carrier_reliability():
+    """
+    Returns live carrier reliability scores calculated from
+    current shipment delay probabilities.
+    Judges can use this to see the agent's perception layer.
+    """
+    rebuild_carrier_stats()
+    result = []
+    for name, stats in sorted(carrier_stats.items(),
+                               key=lambda x: x[1].reliability_score):
+        result.append({
+            "carrier": stats.carrier,
+            "total_shipments": stats.total_shipments,
+            "delayed_shipments": stats.delayed_shipments,
+            "reliability_score": stats.reliability_score,
+            "status": (
+                "⚠️ Degraded" if stats.reliability_score < 0.70
+                else "🟡 Watch" if stats.reliability_score < 0.85
+                else "✅ Good"
+            )
+        })
+    return {"carrier_reliability": result}
+
+
 class ChaosRequest(BaseModel):
     type: str
     location: str
-    severity: str  # Ensure this is here
+    severity: str
     description: str
 
 
@@ -59,23 +122,26 @@ class ChaosRequest(BaseModel):
 def trigger_chaos(chaos: ChaosRequest):
     global current_shipments, current_alerts
 
-    # 1. Add the new alert with the CORRECT severity from the frontend
     new_alert = Alert(
         id=f"ALT-{len(current_alerts) + 1:03d}",
         type=chaos.type,
         location=chaos.location,
-        severity=chaos.severity,  # <--- This fixes the "Always High" bug
+        severity=chaos.severity,
         description=chaos.description
     )
     current_alerts.append(new_alert)
 
-    # 2. Flag affected shipments instantly
+    affected = 0
     for shipment in current_shipments:
         if shipment.origin == chaos.location or shipment.destination == chaos.location:
             shipment.status = "At Risk"
             shipment.delay_probability = 0.95
+            affected += 1
 
-    return {"message": "Chaos injected!", "alert": new_alert}
+    return {
+        "message": f"Chaos injected! {affected} shipments flagged At Risk.",
+        "alert": new_alert
+    }
 
 
 @app.post("/api/run-agent")
@@ -88,18 +154,31 @@ def run_agent():
         "alerts": current_alerts,
         "hypothesis": "",
         "decision": "",
-        "action_taken": ""
+        "action_taken": "",
+        "confidence": 0,
+        "action_type": "",
+        "severity_level": ""
     }
 
     final_state = agent_app.invoke(initial_state)
     current_shipments = final_state.get("shipments", current_shipments)
 
     log_entry = {
+        "timestamp": datetime.now().isoformat(),
         "hypothesis": final_state.get("hypothesis"),
         "decision": final_state.get("decision"),
-        "action_taken": final_state.get("action_taken")
+        "action_taken": final_state.get("action_taken"),
+        "confidence": final_state.get("confidence", 0),
+        "action_type": final_state.get("action_type", "UNKNOWN"),
+        "severity_level": final_state.get("severity_level", "Unknown"),
+        "shipments_affected": len([
+            s for s in current_shipments
+            if s.status in ["Rerouted (Auto)", "Pending Approval", "On Hold",
+                            "Carrier Switch Pending", "Expedited"]
+        ]),
+        "autonomous": "[NEEDS APPROVAL]" not in (final_state.get("decision") or "")
     }
-    agent_history.insert(0, log_entry)  # Put newest log at the top
+    agent_history.insert(0, log_entry)
 
     return {
         "message": "Agent cycle complete.",
@@ -107,17 +186,13 @@ def run_agent():
         "updated_shipments": current_shipments
     }
 
-cached_news = get_latest_news()
-
-# Add this new endpoint
-@app.get("/api/news")
-def get_news():
-    """Serves the live OSINT news data to the frontend."""
-    return {"news": cached_news}
 
 @app.post("/api/approve-actions")
 def approve_actions():
-    """Human-in-the-loop endpoint. Approves actions AND triggers the ChromaDB Learn loop."""
+    """
+    Human-in-the-loop approval endpoint.
+    Approves Pending Approval shipments AND triggers the ChromaDB Learn loop.
+    """
     global current_shipments, current_alerts
     count = 0
 
@@ -127,25 +202,117 @@ def approve_actions():
             shipment.delay_probability = 0.05
             count += 1
 
-    action_taken_text = f"Officially executed rerouting for {count} high-risk shipments based on human operator validation."
+    action_taken_text = (
+        f"Human operator approved rerouting for {count} high-risk shipment(s). "
+        f"Officially executed mitigation plan."
+    )
 
-    # --- THE LEARN LOOP ---
+    # Determine action_type from last agent log
+    last_action_type = "ESCALATE"
+    if agent_history:
+        last_action_type = agent_history[0].get("action_type", "ESCALATE")
+
+    # THE LEARN LOOP — embed approved action into ChromaDB
     if current_alerts:
         latest_alert = current_alerts[-1]
         add_learned_action(
             alert_description=latest_alert.description,
             severity=latest_alert.severity,
-            action_taken=action_taken_text
+            action_taken=action_taken_text,
+            action_type=last_action_type,
+            outcome="success"
         )
 
-    agent_history.insert(0, {
+    log_entry = {
+        "timestamp": datetime.now().isoformat(),
         "hypothesis": "Human Operator Override",
         "decision": "Reviewed and approved escalated AI mitigation plans.",
-        "action_taken": action_taken_text
-    })
+        "action_taken": action_taken_text,
+        "confidence": 100,
+        "action_type": "HUMAN_APPROVED",
+        "severity_level": "High",
+        "shipments_affected": count,
+        "autonomous": False
+    }
+    agent_history.insert(0, log_entry)
 
-    return {"message": f"Approved {count} actions.", "updated_shipments": current_shipments}
+    return {
+        "message": f"✅ Approved {count} action(s). Experience saved to memory.",
+        "updated_shipments": current_shipments
+    }
 
+
+@app.post("/api/evaluate-outcomes")
+def evaluate_outcomes():
+    """
+    THE LEARN LOOP — Step 2.
+    Checks if previous agent actions actually worked by comparing
+    delay_probability after action vs expected thresholds.
+    Writes outcome (success/failure) back into ChromaDB memory.
+    """
+    results = {"successful": 0, "failed": 0, "details": []}
+
+    status_thresholds = {
+        "Rerouted (Auto)": 0.20,
+        "Rerouted (Approved)": 0.15,
+        "On Hold": 0.35,
+        "Carrier Switch Pending": 0.25,
+        "Expedited": 0.15,
+    }
+
+    for shipment in current_shipments:
+        threshold = status_thresholds.get(shipment.status)
+        if threshold is None:
+            continue
+
+        outcome = "success" if shipment.delay_probability <= threshold else "failure"
+
+        if outcome == "failure":
+            results["failed"] += 1
+            results["details"].append({
+                "shipment_id": shipment.shipment_id,
+                "status": shipment.status,
+                "delay_probability": shipment.delay_probability,
+                "threshold": threshold,
+                "outcome": "❌ FAILED — delay still elevated"
+            })
+            # Write failure experience so agent avoids this strategy next time
+            if current_alerts:
+                mark_outcome(
+                    alert_description=current_alerts[-1].description,
+                    outcome="failure"
+                )
+        else:
+            results["successful"] += 1
+            results["details"].append({
+                "shipment_id": shipment.shipment_id,
+                "status": shipment.status,
+                "delay_probability": shipment.delay_probability,
+                "threshold": threshold,
+                "outcome": "✅ SUCCESS"
+            })
+
+    log_entry = {
+        "timestamp": datetime.now().isoformat(),
+        "hypothesis": "Outcome Evaluation",
+        "decision": f"Evaluated {results['successful'] + results['failed']} actioned shipments.",
+        "action_taken": f"✅ {results['successful']} successful | ❌ {results['failed']} failed. Memory updated.",
+        "confidence": 100,
+        "action_type": "EVALUATE",
+        "severity_level": "N/A",
+        "shipments_affected": results["successful"] + results["failed"],
+        "autonomous": True
+    }
+    agent_history.insert(0, log_entry)
+
+    return {
+        "message": f"Outcome evaluation complete. {results['successful']} successes, {results['failed']} failures.",
+        "results": results
+    }
+
+
+# Cache news on startup (avoids calling API on every request)
+cached_news = get_latest_news()
 
 if __name__ == "__main__":
     uvicorn.run("main:app", host="127.0.0.1", port=8000, reload=True)
