@@ -5,13 +5,13 @@ from langchain_openai import ChatOpenAI
 from langgraph.graph import StateGraph, START, END
 
 from state import AgentState, Shipment, Alert
+from memory import get_past_poa  # Pulling in our ChromaDB search
 
 load_dotenv()
 llm = ChatOpenAI(model="gpt-4o-mini", temperature=0)
 
 
 def observe(state: AgentState):
-    # SPECIFIC AGENT CALL: Only look at affected shipments
     at_risk_shipments = [s for s in state.get("shipments", []) if s.status == "At Risk"]
 
     if not at_risk_shipments:
@@ -19,7 +19,7 @@ def observe(state: AgentState):
 
     context = "AFFECTED SHIPMENTS AT RISK:\n"
     for s in at_risk_shipments:
-        context += f"- ID: {s.shipment_id} | Route: {s.origin} -> {s.destination} | Risk: {s.delay_probability}\n"
+        context += f"- ID: {s.shipment_id} | Route: {s.origin} -> {s.destination} | Carrier: {s.carrier} | Risk: {s.delay_probability}\n"
 
     context += "\nACTIVE ALERTS CAUSING RISK:\n"
     for a in state.get("alerts", []):
@@ -49,23 +49,29 @@ def decide(state: AgentState):
     if hypothesis == "All systems operational.":
         return {"decision": "Maintain current routes.", "messages": messages}
 
-    # Deterministically find the highest severity among active alerts
     highest_severity = "Low"
+    current_alert_desc = ""
     for a in alerts:
+        current_alert_desc += a.description + " "
         if a.severity == "High":
             highest_severity = "High"
-            break
-        elif a.severity == "Medium":
+        elif a.severity == "Medium" and highest_severity != "High":
             highest_severity = "Medium"
 
-    # Force the LLM to acknowledge the exact severity level
+    # --- RAG MEMORY RETRIEVAL ---
+    historical_poa = get_past_poa(current_alert_desc.strip())
+
     prompt = HumanMessage(content=(
         f"Hypothesis: {hypothesis}\n"
         f"SYSTEM DATA: The current highest alert severity is strictly classified as '{highest_severity}'.\n"
-        "Formulate a mitigation decision (e.g., reroute, switch carrier). \n"
-        "CRITICAL RULE: If the system data says the severity is 'High', you MUST include the exact text '[NEEDS APPROVAL]' in your decision. "
-        "If the system data says the severity is 'Medium' or 'Low', you are authorized to act autonomously and MUST NOT include '[NEEDS APPROVAL]'. "
-        "Output only the final decision plan."
+        f"HISTORICAL KNOWLEDGE BASE: In a similar past event, the approved Plan of Action (POA) was: '{historical_poa}'.\n\n"
+        "Formulate a mitigation decision. \n"
+        "CRITICAL RULE 1: If severity is 'High', you MUST include the exact text '[NEEDS APPROVAL]' in your decision.\n"
+        "CRITICAL RULE 2: If severity is 'Medium' or 'Low', DO NOT include '[NEEDS APPROVAL]'.\n"
+        "CRITICAL RULE 3: You MUST explicitly explain your reasoning by referencing the HISTORICAL KNOWLEDGE BASE. "
+        "Format your response as:\n"
+        "Action: [Your proposed action]\n"
+        "Reasoning: Based on historical precedent where [explain the past event and why you are copying/adapting it now]."
     ))
 
     response = llm.invoke(messages + [prompt])
@@ -88,11 +94,11 @@ def act(state: AgentState):
             affected_count += 1
             if needs_approval:
                 shipment.status = "Pending Approval"
-                action_log = f"Drafted plans for {affected_count} shipments. Escalated to human operator (HIGH severity)."
+                action_log = f"Drafted mitigation plan based on historical data for {affected_count} shipments. Escalated to human operator due to HIGH severity."
             else:
                 shipment.status = "Rerouted (Auto)"
                 shipment.delay_probability = 0.1
-                action_log = f"Autonomously rerouted {affected_count} shipments to bypass disruption."
+                action_log = f"Autonomously executed historical mitigation plan for {affected_count} shipments."
 
     return {"action_taken": action_log, "shipments": updated_shipments}
 

@@ -4,7 +4,7 @@ import uvicorn
 from pydantic import BaseModel
 import json
 import os
-
+from memory import add_learned_action
 from state import Shipment, Alert, AgentState
 from agent import app as agent_app
 
@@ -109,8 +109,8 @@ def run_agent():
 
 @app.post("/api/approve-actions")
 def approve_actions():
-    """Human-in-the-loop endpoint."""
-    global current_shipments
+    """Human-in-the-loop endpoint. Approves actions AND triggers the ChromaDB Learn loop."""
+    global current_shipments, current_alerts
     count = 0
 
     for shipment in current_shipments:
@@ -119,10 +119,21 @@ def approve_actions():
             shipment.delay_probability = 0.05
             count += 1
 
+    action_taken_text = f"Officially executed rerouting for {count} high-risk shipments based on human operator validation."
+
+    # --- THE LEARN LOOP ---
+    if current_alerts:
+        latest_alert = current_alerts[-1]
+        add_learned_action(
+            alert_description=latest_alert.description,
+            severity=latest_alert.severity,
+            action_taken=action_taken_text
+        )
+
     agent_history.insert(0, {
         "hypothesis": "Human Operator Override",
-        "decision": "Reviewed and approved AI mitigation plans.",
-        "action_taken": f"Officially rerouted {count} high-risk shipments."
+        "decision": "Reviewed and approved escalated AI mitigation plans.",
+        "action_taken": action_taken_text
     })
 
     return {"message": f"Approved {count} actions.", "updated_shipments": current_shipments}
