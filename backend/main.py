@@ -24,20 +24,17 @@ import os
 
 # --- Load Global In-Memory State from JSON ---
 
-# This dynamically finds your maindata folder regardless of where you run the script from
-BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-JSON_PATH = os.path.join(BASE_DIR, "maindata", "stimulated_shipments.json")
-
+Shipment_Path = r"..\maindata\simulated_shipments.json"
 current_shipments = []
 
 try:
-    with open(JSON_PATH, "r") as file:
+    with open(Shipment_Path, "r") as file:
         data = json.load(file)
         # Convert raw JSON dicts into Pydantic Shipment objects
         current_shipments = [Shipment(**item) for item in data]
     print(f"✅ Successfully loaded {len(current_shipments)} shipments from JSON.")
 except FileNotFoundError:
-    print(f"❌ Error: Could not find JSON file at {JSON_PATH}")
+    print(f"❌ Error: Could not find JSON file at {Shipment_Path}")
 except Exception as e:
     print(f"❌ Error parsing JSON: {e}")
 
