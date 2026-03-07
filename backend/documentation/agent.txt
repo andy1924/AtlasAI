@@ -1,0 +1,43 @@
+File: backend/agent.py
+Overview
+
+agent.py implements an autonomous logistics decision agent using LangGraph and an LLM (gpt-4o-mini).
+The agent analyzes shipment status and external alerts to detect risks and suggest mitigation actions.
+
+Workflow
+
+The agent follows a sequential pipeline:
+
+Observe → Reason → Decide → Act
+
+Observe – Collects shipment and alert data and prepares system context.
+
+Reason – Uses the LLM to identify risks and generate a hypothesis.
+
+Decide – Generates an operational decision based on the hypothesis.
+
+Act – Executes the decision and updates shipment status.
+
+State Structure
+
+The workflow operates on a shared state:
+
+messages
+shipments
+alerts
+hypothesis
+decision
+action_taken
+Execution
+
+Running the script simulates a scenario with:
+
+A shipment from Mumbai → Dubai
+
+A port strike alert in Dubai
+
+The agent processes the situation and may automatically reroute shipments if risks are detected.
+
+Run with:
+
+python agent.py

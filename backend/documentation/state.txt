@@ -1,0 +1,70 @@
+File: backend/state.py
+Overview
+
+state.py defines the data models and shared state used by the autonomous logistics agent.
+It ensures structured data handling and state consistency across all LangGraph workflow nodes.
+
+Data Models
+
+Shipment
+Represents a logistics shipment with attributes such as:
+
+id
+
+origin
+
+destination
+
+status
+
+eta
+
+operational_cost
+
+partner_reliability
+
+Alert
+Represents external disruptions affecting logistics operations:
+
+id
+
+type (e.g., Port Strike, Weather Delay)
+
+location
+
+severity
+
+description
+
+Both models use Pydantic for validation.
+
+Agent State
+
+AgentState is a TypedDict used by LangGraph to maintain workflow state.
+
+State fields:
+
+messages
+shipments
+alerts
+hypothesis
+decision
+action_taken
+
+messages stores LLM conversation history.
+
+shipments and alerts store environmental data.
+
+hypothesis, decision, and action_taken store outputs from the Reason → Decide → Act stages.
+
+Testing
+
+The script includes a simple test that:
+
+Creates a mock shipment.
+
+Creates a disruption alert.
+
+Initializes the agent state.
+
+Prints structured data to verify model behavior.

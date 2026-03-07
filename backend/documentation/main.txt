@@ -1,0 +1,62 @@
+File: backend/main.py
+Overview
+
+main.py implements the FastAPI backend for the logistics agent system.
+It exposes API endpoints for shipments, alerts, and triggering the autonomous agent workflow.
+
+Core Functions
+
+API Framework
+
+Built using FastAPI
+
+Enables communication between the Next.js frontend and the backend.
+
+CORS Middleware
+
+Allows cross-origin requests so the frontend can access backend APIs.
+
+In-Memory System State
+
+The backend stores temporary runtime data:
+
+current_shipments
+current_alerts
+agent_history
+
+current_shipments → active logistics shipments
+
+current_alerts → disruption events (e.g., strikes, delays)
+
+agent_history → logs of agent reasoning for UI display
+
+API Endpoints
+
+GET /api/shipments
+Returns current shipment status.
+
+GET /api/alerts
+Returns active system alerts.
+
+GET /api/agent-history
+Returns the agent’s reasoning and decision logs.
+
+POST /api/trigger-chaos
+Injects a simulated disruption alert to test the system.
+
+POST /api/run-agent
+Runs the agent workflow:
+
+Observe → Reason → Decide → Act
+
+The agent analyzes shipments and alerts, generates a decision, and updates shipment status.
+
+Server Execution
+
+Run the backend server with:
+
+python main.py
+
+The API starts on:
+
+http://localhost:8000
