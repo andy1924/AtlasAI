@@ -66,20 +66,31 @@ def get_history():
 class ChaosRequest(BaseModel):
     type: str
     location: str
+    severity: str    # <--- Add this line!
     description: str
 
 
+# In backend/main.py
+
 @app.post("/api/trigger-chaos")
 def trigger_chaos(chaos: ChaosRequest):
-    """The 'Chaos Button' endpoint to inject a fake alert."""
+    global current_shipments  # Make sure you declare this to modify the list
     new_alert = Alert(
         id=f"ALT-{len(current_alerts) + 1:03d}",
         type=chaos.type,
         location=chaos.location,
-        severity="High",
+        severity=chaos.severity,  # <--- Make sure your Alert Pydantic model in state.py accepts this!
         description=chaos.description
     )
     current_alerts.append(new_alert)
+
+    # --- THE BACKEND FIX ---
+    # Instantly flag shipments in the danger zone so the AI knows they are at risk
+    for shipment in current_shipments:
+        if shipment.origin == chaos.location or shipment.destination == chaos.location:
+            shipment.status = "At Risk"
+            shipment.delay_probability = 0.95  # Artificially spike the delay risk
+
     return {"message": "Chaos injected successfully!", "alert": new_alert}
 
 

@@ -36,7 +36,7 @@ def reason(state: AgentState):
     messages = state.get("messages", [])
 
     prompt = HumanMessage(content=(
-        "Based on the system context, identify any risks, bottlenecks, or cascading failures. "
+        "You are a logistics manager, Based on the system context, identify any risks, bottlenecks, or cascading failures. (explicitly related to logistics)"
         "Formulate a specific hypothesis about what will go wrong if no action is taken. "
         "Keep it to 2-3 concise sentences."
     ))
