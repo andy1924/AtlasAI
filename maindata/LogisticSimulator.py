@@ -100,17 +100,18 @@ def generate_shipment():
 # -------------------------
 
 def run_simulation():
+    # Clear the JSON file
+    with open(OUTPUT_JSON, "w") as f:
+        json.dump([], f, indent=4)
 
+    # Generate new shipments
     shipments = []
-
     for _ in range(NUM_SIMULATIONS):
-
         shipment = generate_shipment()
-
         shipments.append(shipment)
 
+    # Write the shipments
     with open(OUTPUT_JSON, "w") as f:
-
         json.dump(shipments, f, indent=4)
 
     print(f"{NUM_SIMULATIONS} simulated shipments saved to {OUTPUT_JSON}")

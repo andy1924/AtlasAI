@@ -1,0 +1,34 @@
+[
+    {
+        "type": "simulated_event",
+        "title": "Major flood",
+        "location": "Kellyfort",
+        "severity": "Medium",
+        "description": "South party my always shake now difficult.",
+        "timestamp": "2026-03-07T21:04:47.446302+00:00"
+    },
+    {
+        "type": "simulated_event",
+        "title": "Warehouse fire",
+        "location": "Andrewfort",
+        "severity": "High",
+        "description": "Off early ask food more bring own.",
+        "timestamp": "2026-03-07T21:04:47.446302+00:00"
+    },
+    {
+        "type": "simulated_event",
+        "title": "Major flood",
+        "location": "South Jameshaven",
+        "severity": "Low",
+        "description": "Hold exist service pick.",
+        "timestamp": "2026-03-07T21:04:47.446302+00:00"
+    },
+    {
+        "type": "simulated_event",
+        "title": "Container shortage",
+        "location": "Port Sandraland",
+        "severity": "Medium",
+        "description": "Certain network growth experience north first.",
+        "timestamp": "2026-03-07T21:04:47.446302+00:00"
+    }
+]
