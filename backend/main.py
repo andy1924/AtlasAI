@@ -66,7 +66,7 @@ def get_history():
 class ChaosRequest(BaseModel):
     type: str
     location: str
-    severity: str    # <--- Add this line!
+    severity: str
     description: str
 
 
