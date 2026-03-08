@@ -1,4 +1,0 @@
-[
-  {"id": "SHIP-001", "status": "In Transit", "origin": "Shanghai", "destination": "Mumbai", "eta": "2026-03-10"},
-  {"id": "SHIP-002", "status": "Delayed", "origin": "Singapore", "destination": "Mumbai", "eta": "2026-03-12"}
-]
