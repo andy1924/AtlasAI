@@ -405,7 +405,7 @@ export default function Dashboard() {
 
   const fetchML = async () => {
     try {
-      const res = await fetch(`http://127.0.0.1:8000/api/ml-predictions`);
+      const res = await fetch(`https://atlasai-fxkj.onrender.com/api/ml-predictions`);
       const data = await res.json();
       if (data.ml_available && data.predictions) { setMlPreds(data.predictions); setMlReady(true); }
     } catch {}
@@ -415,7 +415,7 @@ export default function Dashboard() {
     if (fCarrier === carrier) { setFCarrier(null); setForecast([]); return; }
     setFCarrier(carrier);
     try {
-      const res = await fetch(`http://127.0.0.1:8000/api/ml-forecast/${carrier}?days=3`);
+      const res = await fetch(`https://atlasai-fxkj.onrender.com/api/ml-forecast/${carrier}?days=3`);
       const data = await res.json();
       if (data.forecast) setForecast(data.forecast);
     } catch {}
@@ -424,11 +424,11 @@ export default function Dashboard() {
   const fetchState = useCallback(async () => {
     try {
       const [sR,aR,nR,cR,hR] = await Promise.all([
-        fetch(`http://127.0.0.1:8000/api/shipments`),
-        fetch(`http://127.0.0.1:8000/api/alerts`),
-        fetch(`http://127.0.0.1:8000/api/news`),
-        fetch(`http://127.0.0.1:8000/api/carrier-reliability`),
-        fetch(`http://127.0.0.1:8000/api/agent-history`),
+        fetch(`https://atlasai-fxkj.onrender.com/api/shipments`),
+        fetch(`https://atlasai-fxkj.onrender.com/api/alerts`),
+        fetch(`https://atlasai-fxkj.onrender.com/api/news`),
+        fetch(`https://atlasai-fxkj.onrender.com/api/carrier-reliability`),
+        fetch(`https://atlasai-fxkj.onrender.com/api/agent-history`),
       ]);
       const [sD,aD,nD,cD,hD] = await Promise.all([sR.json(),aR.json(),nR.json(),cR.json(),hR.json()]);
       setShipments(sD.shipments||[]); setAlerts(aD.alerts||[]); setLiveNews(nD.news||[]);
@@ -441,7 +441,7 @@ export default function Dashboard() {
   useEffect(() => { fetchState(); }, [fetchState]);
 
   const handleChaos = async (scenario: ChaosScenario) => {
-    await fetch(`http://127.0.0.1:8000/api/trigger-chaos`, {
+    await fetch(`https://atlasai-fxkj.onrender.com/api/trigger-chaos`, {
       method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify(scenario),
     });
     await handleRunAgent();
@@ -451,7 +451,7 @@ export default function Dashboard() {
   const handleRunAgent = async () => {
     setIsAgentRunning(true);
     try {
-      const res = await fetch(`http://127.0.0.1:8000/api/run-agent`, { method:"POST" });
+      const res = await fetch(`https://atlasai-fxkj.onrender.com/api/run-agent`, { method:"POST" });
       const data = await res.json();
       setShipments(data.updated_shipments);
       await fetchState();
@@ -461,7 +461,7 @@ export default function Dashboard() {
 
   const handleApprove = async () => {
     try {
-      const res = await fetch(`http://127.0.0.1:8000/api/approve-actions`, { method:"POST" });
+      const res = await fetch(`https://atlasai-fxkj.onrender.com/api/approve-actions`, { method:"POST" });
       const data = await res.json();
       setShipments(data.updated_shipments);
       await fetchState();
@@ -471,7 +471,7 @@ export default function Dashboard() {
   const handleEvaluateOutcomes = async () => {
     setIsEvaluating(true);
     try {
-      const res = await fetch(`http://127.0.0.1:8000/api/evaluate-outcomes`, { method:"POST" });
+      const res = await fetch(`https://atlasai-fxkj.onrender.com/api/evaluate-outcomes`, { method:"POST" });
       const data = await res.json();
       setOutcomeResult(data.results);
       setActiveTab("outcomes");
