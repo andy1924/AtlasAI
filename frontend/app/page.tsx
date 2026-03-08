@@ -403,7 +403,7 @@ export default function Dashboard() {
 
   const fetchML = async () => {
     try {
-      const res = await fetch("http://127.0.0.1:8000/api/ml-predictions");
+      const res = await fetch("http://atlasai-production-e108.up.railway.app/api/ml-predictions");
       const data = await res.json();
       if (data.ml_available && data.predictions) { setMlPreds(data.predictions); setMlReady(true); }
     } catch {}
@@ -413,7 +413,7 @@ export default function Dashboard() {
     if (fCarrier === carrier) { setFCarrier(null); setForecast([]); return; }
     setFCarrier(carrier);
     try {
-      const res = await fetch(`http://127.0.0.1:8000/api/ml-forecast/${carrier}?days=3`);
+      const res = await fetch(`http://atlasai-production-e108.up.railway.app/api/ml-forecast/${carrier}?days=3`);
       const data = await res.json();
       if (data.forecast) setForecast(data.forecast);
     } catch {}
@@ -422,11 +422,11 @@ export default function Dashboard() {
   const fetchState = useCallback(async () => {
     try {
       const [sR,aR,nR,cR,hR] = await Promise.all([
-        fetch("http://127.0.0.1:8000/api/shipments"),
-        fetch("http://127.0.0.1:8000/api/alerts"),
-        fetch("http://127.0.0.1:8000/api/news"),
-        fetch("http://127.0.0.1:8000/api/carrier-reliability"),
-        fetch("http://127.0.0.1:8000/api/agent-history"),
+        fetch("http://atlasai-production-e108.up.railway.app/api/shipments"),
+        fetch("http://atlasai-production-e108.up.railway.app/api/alerts"),
+        fetch("http://atlasai-production-e108.up.railway.app/api/news"),
+        fetch("http://atlasai-production-e108.up.railway.app/api/carrier-reliability"),
+        fetch("http://atlasai-production-e108.up.railway.app/api/agent-history"),
       ]);
       const [sD,aD,nD,cD,hD] = await Promise.all([sR.json(),aR.json(),nR.json(),cR.json(),hR.json()]);
       setShipments(sD.shipments||[]); setAlerts(aD.alerts||[]); setLiveNews(nD.news||[]);
@@ -438,7 +438,7 @@ export default function Dashboard() {
   useEffect(() => { fetchState(); }, [fetchState]);
 
   const handleChaos = async (scenario: ChaosScenario) => {
-    await fetch("http://127.0.0.1:8000/api/trigger-chaos", {
+    await fetch("http://atlasai-production-e108.up.railway.app/api/trigger-chaos", {
       method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify(scenario),
     });
     await handleRunAgent();
@@ -448,7 +448,7 @@ export default function Dashboard() {
   const handleRunAgent = async () => {
     setIsAgentRunning(true);
     try {
-      const res = await fetch("http://127.0.0.1:8000/api/run-agent", { method:"POST" });
+      const res = await fetch("http://atlasai-production-e108.up.railway.app/api/run-agent", { method:"POST" });
       const data = await res.json();
       setShipments(data.updated_shipments);
       await fetchState();
@@ -458,7 +458,7 @@ export default function Dashboard() {
 
   const handleApprove = async () => {
     try {
-      const res = await fetch("http://127.0.0.1:8000/api/approve-actions", { method:"POST" });
+      const res = await fetch("http://atlasai-production-e108.up.railway.app/api/approve-actions", { method:"POST" });
       const data = await res.json();
       setShipments(data.updated_shipments);
       await fetchState();
@@ -468,7 +468,7 @@ export default function Dashboard() {
   const handleEvaluateOutcomes = async () => {
     setIsEvaluating(true);
     try {
-      const res = await fetch("http://127.0.0.1:8000/api/evaluate-outcomes", { method:"POST" });
+      const res = await fetch("http://atlasai-production-e108.up.railway.app/api/evaluate-outcomes", { method:"POST" });
       const data = await res.json();
       setOutcomeResult(data.results);
       setActiveTab("outcomes");
