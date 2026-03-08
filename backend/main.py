@@ -22,13 +22,13 @@ except Exception as e:
     print(f"⚠️  LSTM unavailable: {e}")
 app = FastAPI(title="AtlasAI Logistics API")
 
+origins = [
+    "https://atlas-bcyhy3z17-andy1924s-projects.vercel.app",
+]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost:3000",
-        "atlasai-production-e108.up.railway.app",   # ← your exact Vercel URL
-        "https://*.vercel.app"          # ← covers all preview deployments
-    ],
+    allow_origins=origins,   # or ["*"] for testing
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
