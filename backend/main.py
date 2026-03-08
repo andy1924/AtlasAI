@@ -27,9 +27,8 @@ app.add_middleware(
     allow_origins=[
         "http://localhost:3000",
         "atlasai-production-e108.up.railway.app",   # ← your exact Vercel URL
-        "https://*.vercel.app",           # ← covers all preview deployments
-    ]
-    allow_origins=["*"],
+        "https://*.vercel.app"          # ← covers all preview deployments
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
