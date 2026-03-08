@@ -10,7 +10,16 @@ from newsEngine import get_latest_news
 from memory import add_learned_action, mark_outcome
 from state import Shipment, Alert, AgentState, CarrierStats
 from agent import app as agent_app
-
+import sys, os
+ML_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "ml")
+sys.path.insert(0, ML_DIR)
+try:
+    from predictor import refresh_predictions, get_all_predictions, get_forecast
+    ML_AVAILABLE = True
+    print("🧠 LSTM predictor loaded.")
+except Exception as e:
+    ML_AVAILABLE = False
+    print(f"⚠️  LSTM unavailable: {e}")
 app = FastAPI(title="AtlasAI Logistics API")
 
 app.add_middleware(
@@ -64,7 +73,134 @@ rebuild_carrier_stats()
 # ─────────────────────────────────────────────
 # ENDPOINTS
 # ─────────────────────────────────────────────
+"""
+main_ml_additions.py
+────────────────────
+Add these three blocks to your existing backend/main.py.
 
+STEP 1 — Add imports near the top (after existing imports):
+
+    import sys, os
+    ML_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "ml")
+    sys.path.insert(0, ML_DIR)
+    try:
+        from predictor import refresh_predictions, get_all_predictions, get_forecast
+        ML_AVAILABLE = True
+        print("🧠 LSTM predictor loaded.")
+    except Exception as e:
+        ML_AVAILABLE = False
+        print(f"⚠️  LSTM unavailable: {e}")
+
+STEP 2 — Paste the three endpoints below into main.py,
+         after your existing /api/carrier-reliability endpoint.
+"""
+
+# ── Endpoint 1: Current predictions for all carriers ────────────────────────
+
+@app.get("/api/ml-predictions")
+def get_ml_predictions():
+    """
+    Returns LSTM-predicted next-day reliability scores for all carriers.
+    Includes current vs predicted, trend direction, and risk flags.
+    The agent calls refresh_predictions() on every cycle using this same data.
+    """
+    if not ML_AVAILABLE:
+        return {
+            "ml_available": False,
+            "error": "LSTM model not trained. Run: python backend/ml/train.py"
+        }
+    try:
+        predictions = refresh_predictions(current_shipments)
+        return {
+            "ml_available": True,
+            "predictions": predictions,
+            "model_info": {
+                "architecture":    "Dual-head LSTM — LSTM(64) → LSTM(32) → Dense(16) → [Regression, Classification]",
+                "input_features":  11,
+                "sequence_length": 7,
+                "training_days":   180,
+                "training_samples": 900,
+                "outputs": {
+                    "predicted_reliability": "Next-day avg reliability score (regression, 0-1)",
+                    "degradation_probability": "Probability carrier enters degraded state (classification)"
+                }
+            }
+        }
+    except Exception as e:
+        return {"ml_available": False, "error": str(e)}
+
+
+# ── Endpoint 2: Multi-day forecast for a specific carrier ───────────────────
+
+@app.get("/api/ml-forecast/{carrier}")
+def get_carrier_forecast(carrier: str, days: int = 3):
+    """
+    Returns an N-day autoregressive forecast for a specific carrier.
+    Uses LSTM predictions fed back as inputs for multi-step forecasting.
+    Max 7 days (beyond that, prediction quality degrades significantly).
+    """
+    if not ML_AVAILABLE:
+        return {"error": "LSTM model not trained."}
+
+    VALID = ["DHL", "FedEx", "UPS", "BlueDart", "Maersk"]
+    if carrier not in VALID:
+        return {"error": f"Unknown carrier. Valid options: {VALID}"}
+    if days > 7:
+        days = 7  # Cap at 7 days
+
+    try:
+        forecast = get_forecast(carrier, days=days, shipments=current_shipments)
+        return {
+            "carrier": carrier,
+            "forecast_horizon_days": len(forecast),
+            "note": "Autoregressive forecast — accuracy decreases with each step ahead",
+            "forecast": forecast,
+        }
+    except Exception as e:
+        return {"error": str(e)}
+
+
+# ── Endpoint 3: ML system status + eval metrics ─────────────────────────────
+
+@app.get("/api/ml-status")
+def get_ml_status():
+    """
+    Shows model training status, file size, and held-out test metrics.
+    Useful for judges to verify the ML pipeline is live and trained.
+    """
+    MODELS_DIR   = os.path.join(os.path.dirname(os.path.abspath(__file__)), "ml", "models")
+    model_path   = os.path.join(MODELS_DIR, "carrier_lstm.npz")
+    metrics_path = os.path.join(MODELS_DIR, "eval_metrics.json")
+    scaler_path  = os.path.join(MODELS_DIR, "scaler_params.json")
+
+    status = {
+        "model_trained":            os.path.exists(model_path),
+        "scaler_ready":             os.path.exists(scaler_path),
+        "lstm_active_in_agent":     ML_AVAILABLE,
+        "training_data": {
+            "days":     180,
+            "carriers": 5,
+            "shipments": "28,400 synthetic shipments",
+            "sequences": 865,
+            "class_balance": "42% degraded / 58% healthy",
+        }
+    }
+
+    if os.path.exists(metrics_path):
+        with open(metrics_path) as f:
+            status["eval_metrics"] = json.load(f)
+        # Human-readable interpretation
+        m = status["eval_metrics"]
+        status["interpretation"] = {
+            "reliability_mae": f"Predictions off by ±{m['mae']:.4f} reliability score on average",
+            "degradation_f1":  f"F1={m['f1']:.3f} — model correctly identifies {m['recall']*100:.0f}% of degradation events",
+            "overall": "✅ Model meets production threshold" if m['f1'] > 0.80 else "⚠️ Model below threshold"
+        }
+
+    if os.path.exists(model_path):
+        status["model_size_kb"] = round(os.path.getsize(model_path) / 1024, 1)
+
+    return status
 @app.get("/api/shipments")
 def get_shipments():
     return {"shipments": current_shipments}

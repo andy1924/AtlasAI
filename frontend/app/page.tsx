@@ -75,6 +75,27 @@ interface OutcomeResult {
   }>;
 }
 
+interface MLPrediction {
+  predicted_reliability: number;
+  degradation_probability: number;
+  current_reliability: number;
+  trend: number;
+  is_degrading: boolean;
+  is_degraded: boolean;
+  risk_flag: string;
+  last_updated: string;
+  error?: string;
+}
+
+interface ForecastDay {
+  day: number;
+  date: string;
+  predicted_reliability: number;
+  degradation_probability: number;
+  is_degraded: boolean;
+  risk_flag: string;
+}
+
 // ==========================================
 // HELPER COMPONENTS
 // ==========================================
@@ -104,14 +125,14 @@ function ConfidenceMeter({ confidence }: { confidence: number }) {
 
 function ActionTypeBadge({ actionType }: { actionType: string }) {
   const styles: Record<string, string> = {
-    REROUTE: "bg-blue-500/20 text-blue-400 border-blue-500/50",
-    HOLD: "bg-orange-500/20 text-orange-400 border-orange-500/50",
+    REROUTE:        "bg-blue-500/20 text-blue-400 border-blue-500/50",
+    HOLD:           "bg-orange-500/20 text-orange-400 border-orange-500/50",
     SWITCH_CARRIER: "bg-cyan-500/20 text-cyan-400 border-cyan-500/50",
-    EXPEDITE: "bg-purple-500/20 text-purple-400 border-purple-500/50",
-    ESCALATE: "bg-red-500/20 text-red-400 border-red-500/50",
-    MONITOR: "bg-gray-500/20 text-gray-400 border-gray-500/50",
+    EXPEDITE:       "bg-purple-500/20 text-purple-400 border-purple-500/50",
+    ESCALATE:       "bg-red-500/20 text-red-400 border-red-500/50",
+    MONITOR:        "bg-gray-500/20 text-gray-400 border-gray-500/50",
     HUMAN_APPROVED: "bg-green-500/20 text-green-400 border-green-500/50",
-    EVALUATE: "bg-teal-500/20 text-teal-400 border-teal-500/50",
+    EVALUATE:       "bg-teal-500/20 text-teal-400 border-teal-500/50",
   };
   return (
     <span className={`px-2 py-0.5 rounded text-xs font-bold border ${styles[actionType] || "bg-gray-700 text-gray-400"}`}>
@@ -125,26 +146,58 @@ function ActionTypeBadge({ actionType }: { actionType: string }) {
 // ==========================================
 
 export default function Dashboard() {
-  const [shipments, setShipments] = useState<Shipment[]>([]);
-  const [alerts, setAlerts] = useState<Alert[]>([]);
-  const [agentLogs, setAgentLogs] = useState<AgentLog[]>([]);
-  const [liveNews, setLiveNews] = useState<NewsItem[]>([]);
-  const [carrierStats, setCarrierStats] = useState<CarrierStat[]>([]);
-  const [outcomeResult, setOutcomeResult] = useState<OutcomeResult | null>(null);
-  const [isAgentRunning, setIsAgentRunning] = useState<boolean>(false);
-  const [isEvaluating, setIsEvaluating] = useState<boolean>(false);
-  const [activeTab, setActiveTab] = useState<"logs" | "carriers" | "outcomes">("logs");
-  const [currentPage, setCurrentPage] = useState<number>(1);
+  const [shipments,      setShipments]      = useState<Shipment[]>([]);
+  const [alerts,         setAlerts]         = useState<Alert[]>([]);
+  const [agentLogs,      setAgentLogs]      = useState<AgentLog[]>([]);
+  const [liveNews,       setLiveNews]       = useState<NewsItem[]>([]);
+  const [carrierStats,   setCarrierStats]   = useState<CarrierStat[]>([]);
+  const [outcomeResult,  setOutcomeResult]  = useState<OutcomeResult | null>(null);
+  const [isAgentRunning, setIsAgentRunning] = useState(false);
+  const [isEvaluating,   setIsEvaluating]   = useState(false);
+  const [activeTab,      setActiveTab]      = useState<"logs" | "carriers" | "outcomes">("logs");
+  const [currentPage,    setCurrentPage]    = useState(1);
   const itemsPerPage = 20;
 
+  // ML state
+  const [mlPreds,  setMlPreds]  = useState<Record<string, MLPrediction>>({});
+  const [mlReady,  setMlReady]  = useState(false);
+  const [fCarrier, setFCarrier] = useState<string | null>(null);
+  const [forecast, setForecast] = useState<ForecastDay[]>([]);
+
+  // ── Chaos scenarios ────────────────────────────────────────────────────────
   const chaosScenarios: ChaosScenario[] = [
-    { type: "Port Bombing", location: "South Kathryntown", severity: "High", description: "Critical infrastructure destroyed. Total maritime halt." },
-    { type: "Hurricane", location: "Haleview", severity: "High", description: "Category 5 hurricane halting all inbound and outbound traffic." },
-    { type: "Traffic Jam", location: "Port Elizabeth", severity: "Low", description: "Severe congestion on main highway causing minor delays." },
-    { type: "Piracy Threat", location: "North Sandraberg", severity: "Medium", description: "Vessels rerouting due to elevated security risks." },
-    { type: "Port Strike", location: "Kellyland", severity: "Medium", description: "Port workers strike announced. Partial loading halt expected 48h." },
-    { type: "Carrier Degradation", location: "Reedchester", severity: "Medium", description: "Logistics partner experiencing sudden operational degradation." },
+    { type: "Port Bombing",        location: "South Kathryntown", severity: "High",   description: "Critical infrastructure destroyed. Total maritime halt." },
+    { type: "Hurricane",           location: "Haleview",          severity: "High",   description: "Category 5 hurricane halting all inbound and outbound traffic." },
+    { type: "Traffic Jam",         location: "Port Elizabeth",    severity: "Low",    description: "Severe congestion on main highway causing minor delays." },
+    { type: "Piracy Threat",       location: "North Sandraberg",  severity: "Medium", description: "Vessels rerouting due to elevated security risks." },
+    { type: "Port Strike",         location: "Kellyland",         severity: "Medium", description: "Port workers strike announced. Partial loading halt expected 48h." },
+    { type: "Carrier Degradation", location: "Reedchester",       severity: "Medium", description: "Logistics partner experiencing sudden operational degradation." },
   ];
+
+  // ── Fetchers ───────────────────────────────────────────────────────────────
+
+  const fetchML = async () => {
+    try {
+      const res  = await fetch("http://127.0.0.1:8000/api/ml-predictions");
+      const data = await res.json();
+      if (data.ml_available && data.predictions) {
+        setMlPreds(data.predictions);
+        setMlReady(true);
+      }
+    } catch {
+      // LSTM not available — silent fail, UI shows fallback banner
+    }
+  };
+
+  const fetchForecast = async (carrier: string) => {
+    if (fCarrier === carrier) { setFCarrier(null); setForecast([]); return; }
+    setFCarrier(carrier);
+    try {
+      const res  = await fetch(`http://127.0.0.1:8000/api/ml-forecast/${carrier}?days=3`);
+      const data = await res.json();
+      if (data.forecast) setForecast(data.forecast);
+    } catch {}
+  };
 
   const fetchState = async () => {
     try {
@@ -157,20 +210,22 @@ export default function Dashboard() {
       ]);
       const [shipmentData, alertData, newsData, carrierData, historyData] = await Promise.all([
         shipmentRes.json(), alertRes.json(), newsRes.json(),
-        carrierRes.json(), historyRes.json()
+        carrierRes.json(),  historyRes.json(),
       ]);
-
-      setShipments(shipmentData.shipments || []);
-      setAlerts(alertData.alerts || []);
-      setLiveNews(newsData.news || []);
+      setShipments(shipmentData.shipments             || []);
+      setAlerts(alertData.alerts                      || []);
+      setLiveNews(newsData.news                       || []);
       setCarrierStats(carrierData.carrier_reliability || []);
-      setAgentLogs(historyData.history || []);
-    } catch (error) {
-      console.error("Failed to fetch state:", error);
+      setAgentLogs(historyData.history                || []);
+    } catch (e) {
+      console.error("Failed to fetch state:", e);
     }
+    await fetchML();
   };
 
   useEffect(() => { fetchState(); }, []);
+
+  // ── Action handlers ────────────────────────────────────────────────────────
 
   const handleChaos = async (scenario: ChaosScenario) => {
     await fetch("http://127.0.0.1:8000/api/trigger-chaos", {
@@ -185,43 +240,45 @@ export default function Dashboard() {
   const handleRunAgent = async () => {
     setIsAgentRunning(true);
     try {
-      const res = await fetch("http://127.0.0.1:8000/api/run-agent", { method: "POST" });
+      const res  = await fetch("http://127.0.0.1:8000/api/run-agent", { method: "POST" });
       const data = await res.json();
       setShipments(data.updated_shipments);
       await fetchState();
-    } catch (error) {
-      console.error("Agent run failed:", error);
+    } catch (e) {
+      console.error("Agent run failed:", e);
     }
     setIsAgentRunning(false);
   };
 
   const handleApprove = async () => {
     try {
-      const res = await fetch("http://127.0.0.1:8000/api/approve-actions", { method: "POST" });
+      const res  = await fetch("http://127.0.0.1:8000/api/approve-actions", { method: "POST" });
       const data = await res.json();
       setShipments(data.updated_shipments);
       await fetchState();
-    } catch (error) {
-      console.error("Approval failed:", error);
+    } catch (e) {
+      console.error("Approval failed:", e);
     }
   };
 
   const handleEvaluateOutcomes = async () => {
     setIsEvaluating(true);
     try {
-      const res = await fetch("http://127.0.0.1:8000/api/evaluate-outcomes", { method: "POST" });
+      const res  = await fetch("http://127.0.0.1:8000/api/evaluate-outcomes", { method: "POST" });
       const data = await res.json();
       setOutcomeResult(data.results);
       setActiveTab("outcomes");
       await fetchState();
-    } catch (error) {
-      console.error("Evaluation failed:", error);
+    } catch (e) {
+      console.error("Evaluation failed:", e);
     }
     setIsEvaluating(false);
   };
 
-  const activeAlertLocations = alerts.map((a) => a.location);
-  const pendingApprovals = shipments.filter((s) => s.status === "Pending Approval");
+  // ── Derived state ──────────────────────────────────────────────────────────
+
+  const activeAlertLocations = alerts.map(a => a.location);
+  const pendingApprovals     = shipments.filter(s => s.status === "Pending Approval");
 
   const sortedShipments = [...shipments].sort((a, b) => {
     const priority: Record<string, number> = {
@@ -232,7 +289,7 @@ export default function Dashboard() {
     return (priority[a.status] ?? 99) - (priority[b.status] ?? 99);
   });
 
-  const totalPages = Math.ceil(sortedShipments.length / itemsPerPage);
+  const totalPages       = Math.ceil(sortedShipments.length / itemsPerPage);
   const currentShipments = sortedShipments.slice(
     (currentPage - 1) * itemsPerPage,
     currentPage * itemsPerPage
@@ -240,30 +297,38 @@ export default function Dashboard() {
 
   const getStatusStyle = (status: string) => {
     const styles: Record<string, string> = {
-      "At Risk": "bg-red-500/20 text-red-400 border border-red-500/50",
-      "Pending Approval": "bg-yellow-500/20 text-yellow-400 border border-yellow-500/50",
-      "Rerouted (Auto)": "bg-purple-500/20 text-purple-400",
-      "Rerouted (Approved)": "bg-green-500/20 text-green-400",
-      "On Hold": "bg-orange-500/20 text-orange-400",
+      "At Risk":                "bg-red-500/20 text-red-400 border border-red-500/50",
+      "Pending Approval":       "bg-yellow-500/20 text-yellow-400 border border-yellow-500/50",
+      "Rerouted (Auto)":        "bg-purple-500/20 text-purple-400",
+      "Rerouted (Approved)":    "bg-green-500/20 text-green-400",
+      "On Hold":                "bg-orange-500/20 text-orange-400",
       "Carrier Switch Pending": "bg-cyan-500/20 text-cyan-400",
-      "Expedited": "bg-pink-500/20 text-pink-400",
-      "Monitoring": "bg-gray-500/20 text-gray-400",
+      "Expedited":              "bg-pink-500/20 text-pink-400",
+      "Monitoring":             "bg-gray-500/20 text-gray-400",
     };
     return styles[status] || "bg-blue-500/20 text-blue-400";
   };
 
-  // Stats bar
-  const atRiskCount = shipments.filter(s => s.status === "At Risk").length;
-  const pendingCount = pendingApprovals.length;
+  const atRiskCount   = shipments.filter(s => s.status === "At Risk").length;
+  const pendingCount  = pendingApprovals.length;
   const resolvedCount = shipments.filter(s =>
     ["Rerouted (Auto)", "Rerouted (Approved)", "On Hold", "Expedited", "Carrier Switch Pending"].includes(s.status)
   ).length;
   const lastLog = agentLogs[0];
 
+  const liveBarColor = (v: number) =>
+    v >= 0.85 ? "bg-green-500" : v >= 0.80 ? "bg-yellow-500" : "bg-red-500";
+  const predBarColor = (v: number) =>
+    v >= 0.85 ? "bg-purple-500" : v >= 0.80 ? "bg-yellow-500" : "bg-red-500";
+
+  // ==========================================
+  // RENDER
+  // ==========================================
+
   return (
     <div className="min-h-screen bg-gray-900 text-white p-6 font-sans">
 
-      {/* ── HEADER ── */}
+      {/* ── HEADER ─────────────────────────────────────────────────────────── */}
       <header className="flex justify-between items-center mb-6 border-b border-gray-700 pb-4">
         <div>
           <h1 className="text-3xl font-bold text-blue-400">AtlasAI</h1>
@@ -271,7 +336,6 @@ export default function Dashboard() {
         </div>
 
         <div className="flex items-center gap-3">
-          {/* Evaluate Outcomes button */}
           <button
             onClick={handleEvaluateOutcomes}
             disabled={isEvaluating}
@@ -280,7 +344,6 @@ export default function Dashboard() {
             {isEvaluating ? "Evaluating..." : "📊 Evaluate Outcomes"}
           </button>
 
-          {/* Run Agent manually */}
           <button
             onClick={handleRunAgent}
             disabled={isAgentRunning}
@@ -289,7 +352,6 @@ export default function Dashboard() {
             {isAgentRunning ? "[ PROCESSING... ]" : "▶ Run Agent"}
           </button>
 
-          {/* Trigger chaos dropdown */}
           <div className="relative group z-50">
             <button className="px-6 py-2 bg-red-600 hover:bg-red-700 text-white font-bold rounded shadow-lg flex items-center gap-2">
               {isAgentRunning ? "[ PROCESSING ]" : "TRIGGER EVENT ▾"}
@@ -313,7 +375,7 @@ export default function Dashboard() {
         </div>
       </header>
 
-      {/* ── STATS BAR ── */}
+      {/* ── STATS BAR ──────────────────────────────────────────────────────── */}
       <div className="grid grid-cols-4 gap-4 mb-6">
         <div className="bg-gray-800 rounded-lg p-4 border border-gray-700">
           <p className="text-xs text-gray-400 uppercase tracking-wide">Total Tracked</p>
@@ -333,7 +395,7 @@ export default function Dashboard() {
         </div>
       </div>
 
-      {/* ── HUMAN APPROVAL BANNER ── */}
+      {/* ── HUMAN APPROVAL BANNER ──────────────────────────────────────────── */}
       {pendingApprovals.length > 0 && (
         <div className="mb-6 p-6 bg-yellow-900/30 border border-yellow-600 rounded-lg shadow-lg">
           <div className="flex justify-between items-center mb-4">
@@ -366,7 +428,7 @@ export default function Dashboard() {
         </div>
       )}
 
-      {/* ── MAIN GRID ── */}
+      {/* ── MAIN GRID ──────────────────────────────────────────────────────── */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
 
         {/* LEFT — Alerts + Shipments */}
@@ -387,7 +449,7 @@ export default function Dashboard() {
                       <span className="text-gray-400 text-sm"> — {a.description}</span>
                     </div>
                     <span className={`px-2 py-1 rounded text-xs font-bold ml-3 shrink-0 ${
-                      a.severity === "High" ? "bg-red-600" :
+                      a.severity === "High"   ? "bg-red-600" :
                       a.severity === "Medium" ? "bg-orange-500" :
                       "bg-yellow-500 text-black"
                     }`}>
@@ -421,7 +483,10 @@ export default function Dashboard() {
                   {currentShipments.map((s) => {
                     const isAffected = activeAlertLocations.includes(s.origin) || activeAlertLocations.includes(s.destination);
                     return (
-                      <tr key={s.shipment_id} className={`border-b border-gray-700/50 ${isAffected ? "bg-red-900/10" : ""}`}>
+                      <tr
+                        key={s.shipment_id}
+                        className={`border-b border-gray-700/50 ${isAffected ? "bg-red-900/10" : ""}`}
+                      >
                         <td className="py-2 pr-4 font-mono text-xs">
                           {isAffected && <span className="text-red-500 mr-1">[!]</span>}
                           {s.shipment_id}
@@ -481,6 +546,7 @@ export default function Dashboard() {
 
           {/* Tabbed Right Panel */}
           <div className="bg-gray-800 rounded-lg border border-gray-700 flex flex-col" style={{ maxHeight: "60vh" }}>
+
             {/* Tab bar */}
             <div className="flex border-b border-gray-700">
               {(["logs", "carriers", "outcomes"] as const).map((tab) => (
@@ -500,7 +566,7 @@ export default function Dashboard() {
 
             <div className="overflow-y-auto p-4 flex-1">
 
-              {/* Agent Logs Tab */}
+              {/* ── AGENT LOG TAB ── */}
               {activeTab === "logs" && (
                 <div className="space-y-4">
                   {agentLogs.length === 0 ? (
@@ -511,8 +577,8 @@ export default function Dashboard() {
                         key={idx}
                         className={`p-4 rounded border text-sm ${
                           log.action_type === "HUMAN_APPROVED" ? "bg-green-900/10 border-green-700/40" :
-                          log.action_type === "ESCALATE" ? "bg-yellow-900/10 border-yellow-700/40" :
-                          log.action_type === "EVALUATE" ? "bg-teal-900/10 border-teal-700/40" :
+                          log.action_type === "ESCALATE"       ? "bg-yellow-900/10 border-yellow-700/40" :
+                          log.action_type === "EVALUATE"       ? "bg-teal-900/10 border-teal-700/40" :
                           "bg-gray-900 border-gray-700"
                         }`}
                       >
@@ -530,9 +596,7 @@ export default function Dashboard() {
 
                         <div className="mb-2">
                           <span className="text-xs text-gray-500 uppercase tracking-wide block">Execution</span>
-                          <p className={`font-semibold mt-1 text-xs ${
-                            !log.autonomous ? "text-yellow-400" : "text-purple-400"
-                          }`}>
+                          <p className={`font-semibold mt-1 text-xs ${!log.autonomous ? "text-yellow-400" : "text-purple-400"}`}>
                             {!log.autonomous ? "👤 [HUMAN] " : "🤖 [AUTO] "}
                             {log.action_taken}
                           </p>
@@ -552,45 +616,156 @@ export default function Dashboard() {
                 </div>
               )}
 
-              {/* Carrier Reliability Tab */}
+              {/* ── CARRIERS TAB (with LSTM ML panel) ── */}
               {activeTab === "carriers" && (
                 <div className="space-y-3">
-                  <p className="text-xs text-gray-400 mb-3">Live reliability scores calculated from current delay probabilities.</p>
+
+                  {/* ML status banner */}
+                  <div className={`px-3 py-2 rounded text-xs font-semibold tracking-wide ${
+                    mlReady
+                      ? "bg-teal-900/30 border border-teal-700/40 text-teal-300"
+                      : "bg-gray-700/30 border border-gray-600 text-gray-400"
+                  }`}>
+                    {mlReady
+                      ? "🧠 LSTM Active — next-day reliability predictions from trained model"
+                      : "⚠️ LSTM not loaded — run: python backend/ml/train.py"}
+                  </div>
+
                   {carrierStats.length === 0 ? (
                     <p className="text-gray-500 italic text-sm">Loading carrier data...</p>
                   ) : (
-                    carrierStats.map((c) => (
-                      <div key={c.carrier} className="bg-gray-900 rounded p-3 border border-gray-700">
-                        <div className="flex justify-between items-center mb-1">
-                          <span className="font-semibold text-sm">{c.carrier}</span>
-                          <span className="text-xs">{c.status}</span>
+                    carrierStats.map((cs) => {
+                      const ml       = mlPreds[cs.carrier];
+                      const selected = fCarrier === cs.carrier;
+
+                      return (
+                        <div
+                          key={cs.carrier}
+                          onClick={() => fetchForecast(cs.carrier)}
+                          className={`rounded-lg border cursor-pointer transition-all duration-150 ${
+                            selected
+                              ? "border-blue-500/60 bg-gray-800"
+                              : "border-gray-700 bg-gray-900 hover:border-gray-500"
+                          }`}
+                        >
+                          <div className="p-3 space-y-2">
+
+                            {/* Header */}
+                            <div className="flex items-center justify-between">
+                              <span className="font-semibold text-sm text-white">{cs.carrier}</span>
+                              <div className="flex items-center gap-2 text-xs">
+                                {ml && <span>{ml.risk_flag}</span>}
+                                <span className="text-gray-400">{cs.status}</span>
+                              </div>
+                            </div>
+
+                            {/* Live reliability bar */}
+                            <div>
+                              <div className="flex justify-between text-xs text-gray-400 mb-1">
+                                <span>Live Reliability</span>
+                                <span>{(cs.reliability_score * 100).toFixed(1)}%</span>
+                              </div>
+                              <div className="w-full bg-gray-700 rounded-full h-1.5">
+                                <div
+                                  className={`h-1.5 rounded-full ${liveBarColor(cs.reliability_score)} transition-all`}
+                                  style={{ width: `${cs.reliability_score * 100}%` }}
+                                />
+                              </div>
+                            </div>
+
+                            {/* LSTM predicted reliability bar */}
+                            {ml && !ml.error && (
+                              <div>
+                                <div className="flex justify-between text-xs mb-1">
+                                  <span className="text-purple-400">🧠 LSTM Tomorrow</span>
+                                  <span className="flex items-center gap-1.5">
+                                    <span className="text-gray-300">
+                                      {(ml.predicted_reliability * 100).toFixed(1)}%
+                                    </span>
+                                    <span className={ml.trend >= 0 ? "text-green-400" : "text-red-400"}>
+                                      ({ml.trend >= 0 ? "+" : ""}{(ml.trend * 100).toFixed(1)}%)
+                                    </span>
+                                  </span>
+                                </div>
+                                <div className="w-full bg-gray-700 rounded-full h-1.5">
+                                  <div
+                                    className={`h-1.5 rounded-full ${predBarColor(ml.predicted_reliability)} transition-all`}
+                                    style={{ width: `${ml.predicted_reliability * 100}%` }}
+                                  />
+                                </div>
+                              </div>
+                            )}
+
+                            {/* Warning banners */}
+                            {ml?.is_degraded && (
+                              <div className="px-2 py-1 bg-red-900/30 border border-red-700/40 rounded text-xs text-red-300">
+                                🔴 LSTM predicts degraded state — agent will auto-flag shipments on next cycle
+                              </div>
+                            )}
+                            {!ml?.is_degraded && ml?.is_degrading && (
+                              <div className="px-2 py-1 bg-orange-900/30 border border-orange-700/40 rounded text-xs text-orange-300">
+                                ⚠️ Declining trend — consider SWITCH_CARRIER proactively
+                              </div>
+                            )}
+
+                            {/* Footer stats */}
+                            <div className="flex justify-between text-xs text-gray-500">
+                              <span>{cs.delayed_shipments}/{cs.total_shipments} delayed</span>
+                              {ml && <span>Deg prob: {(ml.degradation_probability * 100).toFixed(0)}%</span>}
+                            </div>
+                          </div>
+
+                          {/* 3-day forecast panel — expands on click */}
+                          {selected && forecast.length > 0 && (
+                            <div className="border-t border-gray-700 p-3 bg-gray-800/60">
+                              <p className="text-xs font-semibold text-purple-400 mb-2">
+                                🧠 3-Day LSTM Forecast
+                              </p>
+                              <div className="grid grid-cols-3 gap-2">
+                                {forecast.map((f) => (
+                                  <div
+                                    key={f.day}
+                                    className={`p-2 rounded border text-center ${
+                                      f.is_degraded
+                                        ? "border-red-700/50 bg-red-900/20"
+                                        : "border-gray-600 bg-gray-900"
+                                    }`}
+                                  >
+                                    <p className="text-gray-400 text-xs">{f.date.slice(5)}</p>
+                                    <p className={`text-sm font-bold mt-1 ${
+                                      f.predicted_reliability >= 0.85 ? "text-green-400" :
+                                      f.predicted_reliability >= 0.80 ? "text-yellow-400" :
+                                      "text-red-400"
+                                    }`}>
+                                      {(f.predicted_reliability * 100).toFixed(1)}%
+                                    </p>
+                                    <p className="text-xs mt-0.5 text-gray-400">{f.risk_flag}</p>
+                                  </div>
+                                ))}
+                              </div>
+                              <p className="text-xs text-gray-600 mt-2">
+                                Autoregressive — accuracy decreases each step ahead
+                              </p>
+                            </div>
+                          )}
                         </div>
-                        <div className="w-full bg-gray-700 rounded-full h-2 mb-1">
-                          <div
-                            className={`h-2 rounded-full ${
-                              c.reliability_score >= 0.85 ? "bg-green-500" :
-                              c.reliability_score >= 0.70 ? "bg-yellow-500" : "bg-red-500"
-                            }`}
-                            style={{ width: `${c.reliability_score * 100}%` }}
-                          />
-                        </div>
-                        <div className="flex justify-between text-xs text-gray-400">
-                          <span>{(c.reliability_score * 100).toFixed(1)}% reliable</span>
-                          <span>{c.delayed_shipments}/{c.total_shipments} delayed</span>
-                        </div>
-                      </div>
-                    ))
+                      );
+                    })
                   )}
                 </div>
               )}
 
-              {/* Outcome Evaluation Tab */}
+              {/* ── OUTCOMES TAB ── */}
               {activeTab === "outcomes" && (
                 <div>
                   {!outcomeResult ? (
                     <div className="text-center py-6">
-                      <p className="text-gray-400 text-sm mb-3">Click "Evaluate Outcomes" to check if past agent actions worked.</p>
-                      <p className="text-xs text-gray-500">This closes the LEARN loop — failures are recorded in ChromaDB so the agent improves over time.</p>
+                      <p className="text-gray-400 text-sm mb-3">
+                        Click "Evaluate Outcomes" to check if past agent actions worked.
+                      </p>
+                      <p className="text-xs text-gray-500">
+                        This closes the LEARN loop — failures are recorded in ChromaDB so the agent improves over time.
+                      </p>
                     </div>
                   ) : (
                     <div className="space-y-3">
@@ -615,7 +790,9 @@ export default function Dashboard() {
                               <span className="font-mono text-gray-300">{d.shipment_id}</span>
                               <span>{d.outcome.includes("SUCCESS") ? "✅" : "❌"}</span>
                             </div>
-                            <div className="text-gray-400 mt-0.5">{d.status} — risk: {(d.delay_probability * 100).toFixed(0)}%</div>
+                            <div className="text-gray-400 mt-0.5">
+                              {d.status} — risk: {(d.delay_probability * 100).toFixed(0)}%
+                            </div>
                           </div>
                         ))}
                       </div>
@@ -623,6 +800,7 @@ export default function Dashboard() {
                   )}
                 </div>
               )}
+
             </div>
           </div>
 
@@ -657,6 +835,7 @@ export default function Dashboard() {
               </div>
             )}
           </div>
+
         </div>
       </div>
     </div>
