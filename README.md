@@ -5,18 +5,19 @@
 ### Autonomous Logistics Intelligence Layer
 
 [![Python](https://img.shields.io/badge/Python-3.12+-3776AB?style=for-the-badge&logo=python&logoColor=white)](https://python.org)
-[![Next.js](https://img.shields.io/badge/Next.js-15-000000?style=for-the-badge&logo=nextdotjs&logoColor=white)](https://nextjs.org)
+[![Next.js](https://img.shields.io/badge/Next.js-16-000000?style=for-the-badge&logo=nextdotjs&logoColor=white)](https://nextjs.org)
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.100+-009688?style=for-the-badge&logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com)
 [![LangGraph](https://img.shields.io/badge/LangGraph-Agent-1C3C3C?style=for-the-badge&logo=chainlink&logoColor=white)](https://langchain.com)
 [![ChromaDB](https://img.shields.io/badge/ChromaDB-RAG_Memory-E05A2B?style=for-the-badge)](https://trychroma.com)
 [![OpenAI](https://img.shields.io/badge/OpenAI-GPT--4o--mini-412991?style=for-the-badge&logo=openai&logoColor=white)](https://platform.openai.com)
+[![NumPy](https://img.shields.io/badge/NumPy-LSTM_Engine-013243?style=for-the-badge&logo=numpy&logoColor=white)](https://numpy.org)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow?style=for-the-badge)](LICENSE)
 
 <br/>
 
-*A full-stack autonomous AI agent that proactively detects logistics disruptions, reasons about cascading failures, retrieves outcome-weighted historical Plans of Action from vector memory, and either self-executes mitigations or escalates to a human operator — then evaluates whether its decisions actually worked, closing the full observe → reason → decide → act → learn loop.*
+*A full-stack autonomous AI agent that proactively detects logistics disruptions, reasons about cascading failures, retrieves outcome-weighted historical Plans of Action from vector memory, and either self-executes mitigations or escalates to a human operator — then evaluates whether its decisions actually worked, closing the full observe → reason → decide → act → learn loop. Now featuring a pure-NumPy dual-head LSTM for carrier reliability forecasting and a real-time global fleet tracking map.*
 
-[Features](#-features) • [Architecture](#-architecture) • [Installation](#-installation) • [Agent Loop](#-agent-loop) • [API Reference](#-api-reference) • [Memory System](#-memory--rag-system) • [Dashboard](#-dashboard)
+[Features](#-features) • [Architecture](#-architecture) • [LSTM ML Engine](#-lstm-ml-engine) • [Installation](#-installation) • [Agent Loop](#-agent-loop) • [API Reference](#-api-reference) • [Memory System](#-memory--rag-system) • [Dashboard](#-dashboard)
 
 </div>
 
@@ -27,6 +28,8 @@
 AtlasAI is a full-stack autonomous logistics intelligence system built around a 4-node LangGraph agent. When a disruption is detected — whether injected manually or auto-flagged by the proactive observer — the agent reasons about root causes and cascading impact, retrieves the closest historical Plan of Action from ChromaDB using semantic similarity, chooses from a structured action menu, and either executes the mitigation autonomously or escalates it based on severity and confidence.
 
 After actions are taken, a dedicated outcome evaluator checks whether each intervention actually reduced delay probability. Failures are written back into ChromaDB so the agent improves with every incident cycle.
+
+A custom-built dual-head LSTM (zero external ML dependencies — pure NumPy) runs in parallel to predict next-day carrier reliability and degradation probability, feeding its risk flags directly into the agent's decision node. The frontend visualises all of this on a live D3-powered world map showing real-time vessel positions, chaos-affected ships highlighted in red, and animated route lines to destination ports.
 
 ---
 
@@ -45,6 +48,10 @@ After actions are taken, a dedicated outcome evaluator checks whether each inter
 | 🌐 OSINT News Feed | MediaStack API monitors 80+ countries for natural and geopolitical disruptions |
 | ⚡ Chaos Simulation | 6 pre-built scenarios (port bombing, hurricane, piracy, strike, carrier degradation…) |
 | 📋 Full Audit Trail | Timestamped agent history with confidence, action type, affected count, autonomous flag |
+| 🧬 Dual-Head LSTM | Pure-NumPy LSTM predicts next-day carrier reliability **and** degradation probability simultaneously |
+| 📈 3-Day Carrier Forecast | Autoregressive LSTM forecast per carrier — click any carrier card to expand the 3-day outlook |
+| 🗺️ Live Fleet Tracker | Real-time D3 world map with 12 vessel positions, route lines, affected ships in red, and hover tooltips |
+| 👤 User Profile | Authenticated session shown as Aditya (Logistics Analyst) with profile dropdown in the header |
 
 ---
 
@@ -54,24 +61,38 @@ After actions are taken, a dedicated outcome evaluator checks whether each inter
 AtlasAI/
 │
 ├── backend/
-│   ├── main.py               # FastAPI app — 8 REST endpoints, carrier stats, outcome eval
-│   ├── agent.py              # LangGraph agent — proactive observer + 4-node graph
-│   ├── memory.py             # ChromaDB RAG — seed, outcome-weighted search, learn, mark
-│   ├── state.py              # Pydantic models: Shipment, Alert, CarrierStats, AgentState
-│   ├── newsEngine.py         # MediaStack OSINT feed & disruption keyword filter
-│   ├── chaos_engine.py       # Disruption event generator
-│   └── riskAnalysis.py       # Shipment risk scoring
+│   ├── main.py                    # FastAPI app — 10 REST endpoints, carrier stats, ML predictions, outcome eval
+│   ├── agent.py                   # LangGraph agent — proactive observer + 4-node graph, ML risk integration
+│   ├── memory.py                  # ChromaDB RAG — seed, outcome-weighted search, learn, mark
+│   ├── state.py                   # Pydantic models: Shipment, Alert, CarrierStats, AgentState
+│   ├── newsEngine.py              # MediaStack OSINT feed & disruption keyword filter
+│   │
+│   └── ml/
+│       ├── lstm_model.py          # Pure-NumPy dual-head LSTM — zero external ML deps
+│       ├── data_prep.py           # Feature engineering, MinMax scaler, sequence builder
+│       ├── predictor.py           # Inference layer — refresh, get predictions, 3-day forecast
+│       └── train.py               # Training script — run once to produce carrier_lstm.npz
+│       └── models/
+│           ├── carrier_lstm.npz   # Trained model weights (NumPy savez format)
+│           ├── scaler_params.json # MinMax scaler lo/rng values for all 11 features
+│           └── eval_metrics.json  # Last training run: MAE, RMSE, Acc, Precision, Recall, F1
 │
 ├── frontend/
 │   └── app/
-│       └── page.tsx          # Next.js dashboard — tabbed panels, confidence meter, outcome eval
+│       └── page.tsx               # Next.js dashboard — map, fleet tracker, tabbed panels, profile
 │
 ├── maindata/
 │   ├── simulated_shipments.json   # 1,000 simulated shipments
-│   └── LogisticSimulator.py       # Shipment data generator
+│   ├── carrier_daily_series.json  # Daily carrier reliability time-series for LSTM training
+│   └── LogisticSimulator.py       # Shipment + time-series data generator
 │
-├── backend/chroma_db/        # Auto-generated ChromaDB vector store (persisted locally)
-├── .env                      # API keys — never commit
+├── data/
+│   ├── shipements.json            # Seed shipments
+│   ├── chaos_feed.json            # Chaos event log
+│   └── news_events.json           # OSINT event cache
+│
+├── backend/chroma_db/             # Auto-generated ChromaDB vector store (persisted locally)
+├── .env                           # API keys — never commit
 ├── requirements.txt
 └── README.md
 ```
@@ -90,12 +111,17 @@ AtlasAI/
         │                           │                  (carrier reliability,
         └──────────┬────────────────┘                   ETA, delay_prob,
                    ▼                                    weight+distance)
-          POST /api/run-agent
-                   │
-      ┌────────────▼────────────┐
-      │     LangGraph Agent     │
+          POST /api/run-agent                                    │
+                   │                              ┌─────────────▼──────────────┐
+                   │                              │   LSTM Predictor (parallel) │
+                   │                              │  predicted_reliability[t+1] │
+                   │                              │  degradation_probability    │
+                   │                              │  is_degraded / risk_flag    │
+                   │                              └─────────────┬──────────────┘
+      ┌────────────▼────────────┐                               │
+      │     LangGraph Agent     │◄──────────────────────────────┘
       │  ┌─────────────────┐    │
-      │  │    OBSERVE      │    │  ← Runs auto_flag_at_risk(), builds context
+      │  │    OBSERVE      │    │  ← Runs auto_flag_at_risk(), integrates LSTM risk flags
       │  └────────┬────────┘    │
       │  ┌────────▼────────┐    │
       │  │     REASON      │    │  ← GPT-4o-mini: root cause + cascading impact
@@ -131,49 +157,92 @@ AtlasAI/
                        └─────────────────────┘
 ```
 
-### Core Modules
+---
 
-#### `agent.py` — LangGraph Agent
+## 🧬 LSTM ML Engine
 
-| Node | What it does |
-|---|---|
-| `observe` | Runs `auto_flag_at_risk()` — scores shipments on 4 signals (carrier reliability < 0.70, ETA < 8h, delay_probability > 0.65, heavy+long route). Builds structured context string. |
-| `reason` | GPT-4o-mini identifies root cause, cascading impact, and patterns (e.g. multiple shipments from same degraded carrier). |
-| `decide` | Calls `get_past_poa()` for outcome-weighted RAG retrieval. GPT selects from 6-action menu and outputs a `Confidence: N` score. If confidence < 45%, auto-escalates regardless of severity. |
-| `act` | Applies action-specific mutations: HOLD adds 24h ETA, EXPEDITE subtracts 12h and adds 15% cost, SWITCH_CARRIER sets reliability to 0.92, REROUTE sets delay to 0.10. |
+AtlasAI includes a fully custom dual-head LSTM built from scratch in pure NumPy — no PyTorch, no TensorFlow, no Keras. It is trained on historical carrier daily series data and serves two simultaneous predictions per carrier.
 
-#### `memory.py` — ChromaDB RAG System
+### Architecture
 
-- **8 pre-seeded POAs** tagged with `action_type` and `outcome: success`
-- **`get_past_poa(desc)`** — returns top-k results, filters for `outcome: success`, returns `poa`, `action_type`, and `confidence_hint`
-- **`add_learned_action(...)`** — called on human approval, embeds experience with outcome tag
-- **`mark_outcome(...)`** — called by outcome evaluator on failures, adds failure record so future retrievals deprioritise that strategy
-
-#### `state.py` — Data Models
-
-```python
-class Shipment(BaseModel):
-    shipment_id, origin, destination, carrier
-    weight_kg, distance_km, eta_hours
-    status, delay_probability, operational_cost
-    partner_reliability, timestamp
-
-class Alert(BaseModel):
-    id, type, location
-    severity   # "High" | "Medium" | "Low"
-    description
-
-class CarrierStats(BaseModel):
-    carrier, total_shipments, delayed_shipments
-    reliability_score  # 0.0–1.0
-
-class AgentState(TypedDict):
-    messages, shipments, alerts
-    hypothesis, decision, action_taken
-    confidence     # NEW: 0–100
-    action_type    # NEW: REROUTE | HOLD | SWITCH_CARRIER | EXPEDITE | ESCALATE | MONITOR
-    severity_level # NEW: High | Medium | Low | None
 ```
+Input  (batch, 7 days, 11 features)
+  │
+  ├── LSTM Layer 1   hidden=64   return_sequences=True
+  │   └── Dropout 0.25
+  │
+  ├── LSTM Layer 2   hidden=32   return_sequences=False
+  │   └── Dropout 0.25
+  │
+  └── Dense(16, tanh)
+        │
+        ├── Head A: Dense(1, sigmoid)  →  predicted_reliability   [regression]
+        └── Head B: Dense(1, sigmoid)  →  degradation_probability [classification]
+```
+
+### Training
+
+```
+Loss = 0.65 × MSE(reliability) + 0.35 × BCE(is_degraded)
+Optimizer: Adam   lr=0.001   β1=0.9   β2=0.999
+Epochs: 100   Batch: 32   Early-stop patience: 15
+```
+
+Run training once before starting the backend:
+
+```bash
+cd backend
+python ml/train.py
+```
+
+This produces `backend/ml/models/carrier_lstm.npz` and `scaler_params.json`. On completion it prints test-set metrics:
+
+```
+📊 Test-set evaluation
+────────────────────────────────────────
+  Regression      — MAE=0.0182  RMSE=0.0241
+  Classification  — Acc=0.894  Prec=0.871  Rec=0.883  F1=0.877
+```
+
+### What the LSTM outputs per carrier
+
+| Output | Type | Description |
+|---|---|---|
+| `predicted_reliability` | float 0–1 | Forecast reliability for next day |
+| `degradation_probability` | float 0–1 | Probability of entering degraded state |
+| `trend` | float (signed) | Delta vs current live reliability |
+| `is_degrading` | bool | Downward trend detected (warn proactively) |
+| `is_degraded` | bool | Predicted to fall below 0.80 threshold |
+| `risk_flag` | string | Emoji badge: 🟢 / 🟡 / 🔴 |
+
+### Integration with the Agent
+
+When `is_degraded = True`, the agent's `observe` node receives a pre-populated risk flag for that carrier. This feeds into the `reason` node's context window so GPT-4o-mini can explicitly factor in predictive degradation — not just current live reliability — when selecting an action.
+
+### 3-Day Autoregressive Forecast
+
+The `/api/ml-forecast/{carrier}?days=3` endpoint runs the LSTM autoregressively: the output of each prediction step is fed back as input for the next. Click any carrier card in the **Carriers** tab to expand the 3-day panel. Accuracy naturally decreases each step ahead.
+
+---
+
+## 🗺️ Live Fleet Tracker
+
+The dashboard includes a real-time D3.js world map (Natural Earth projection) rendering global vessel positions with live movement simulation.
+
+### What the map shows
+
+- **12 mock vessels** plotted at real geographic coordinates, updated every 2.5 seconds
+- **Cyan ships** — nominal operations, moving along their routes
+- **Orange ships** — at-risk; elevated delay probability or flagged by LSTM
+- **Red ships** — chaos-affected; stopped or severely disrupted
+- **Dashed route lines** from each vessel's current position to its destination port
+- **Port markers** for 10 major hubs (Shanghai, Rotterdam, Dubai, Mumbai, etc.)
+- **Alert zone rings** — pulsing red halos appear on the map around any active chaos location
+- **Hover tooltip** — click or hover any vessel to see: vessel name, ID, route, carrier, speed (knots), cargo type, and current status badge
+
+### Live status sync
+
+When a chaos event is triggered via the dashboard, the ship status layer automatically updates: a proportion of vessels are promoted to `affected` (stopped) and `at-risk` (slowed), visually reflecting the disruption on the map in real time. Resolving all alerts resets ships to nominal state.
 
 ---
 
@@ -182,7 +251,7 @@ class AgentState(TypedDict):
 ### Prerequisites
 
 - Python **3.12+**
-- Node.js **18+** (for the Next.js frontend)
+- Node.js **18+**
 - [OpenAI API key](https://platform.openai.com/api-keys) — `gpt-4o-mini` + `text-embedding-3-small`
 - [MediaStack API key](https://mediastack.com/) — live OSINT news feed
 
@@ -225,7 +294,16 @@ MEDIA_STACK_API="your_mediastack_api_key_here"
 
 > ⚠️ **Never commit your `.env` file.** It is already listed in `.gitignore`.
 
-### 5. Start the Backend
+### 5. Train the LSTM (one-time setup)
+
+```bash
+cd backend
+python ml/train.py
+```
+
+This generates `backend/ml/models/carrier_lstm.npz` and `scaler_params.json`. Takes ~30–60 seconds. Skip this step only if you want the dashboard to show the LSTM-unavailable banner instead of live predictions.
+
+### 6. Start the Backend
 
 ```bash
 cd backend
@@ -242,7 +320,7 @@ On first run, ChromaDB initialises and seeds 8 historical POAs automatically:
 INFO: Uvicorn running on http://127.0.0.1:8000
 ```
 
-### 6. Start the Frontend
+### 7. Start the Frontend
 
 ```bash
 cd frontend
@@ -259,11 +337,11 @@ The complete loop from detection to learning runs in 5 steps:
 
 ### Step 1 — Proactive Detection (automatic)
 
-Every time the agent runs, `auto_flag_at_risk()` scans all `In Transit` shipments and flags those exceeding a composite risk score across 4 signals — no manual event injection needed.
+Every time the agent runs, `auto_flag_at_risk()` scans all `In Transit` shipments and flags those exceeding a composite risk score across 4 signals — no manual event injection needed. The LSTM predictor runs in parallel and pre-flags any carriers it predicts will degrade by the next day.
 
 ### Step 2 — Inject a Chaos Event (optional, for demos)
 
-Use the **TRIGGER EVENT** button on the dashboard, or call directly:
+Use the **⚡ Trigger Event** button on the dashboard, or call directly:
 
 ```bash
 curl -X POST http://127.0.0.1:8000/api/trigger-chaos \
@@ -341,6 +419,8 @@ Compares each actioned shipment's current `delay_probability` against per-action
 | `GET` | `/api/news` | Live OSINT events from MediaStack |
 | `GET` | `/api/carrier-reliability` | Live reliability scores per carrier, calculated from delay data |
 | `GET` | `/api/agent-history` | Full timestamped audit trail of all agent decisions |
+| `GET` | `/api/ml-predictions` | LSTM predictions for all carriers — reliability, degradation prob, trend, risk flag |
+| `GET` | `/api/ml-forecast/{carrier}?days=N` | Autoregressive N-day LSTM forecast for a single carrier |
 | `POST` | `/api/trigger-chaos` | Inject a disruption event, flag matching shipments `At Risk` |
 | `POST` | `/api/run-agent` | Run the full Observe → Reason → Decide → Act cycle |
 | `POST` | `/api/approve-actions` | Human approval — execute pending actions + trigger ChromaDB learn |
@@ -397,20 +477,44 @@ add_learned_action(          mark_outcome(
 
 ## 📊 Dashboard
 
-The Next.js frontend exposes the full agent lifecycle in a single dark-themed dashboard:
+The Next.js frontend exposes the full agent lifecycle in a single dark-themed, deep-navy dashboard.
 
-**Top bar** — Stats panel showing total tracked, at-risk count (pulses red when active), pending approvals, and resolved shipments.
+### Header
 
-**Shipment table** — Sorted by risk priority (At Risk → Pending → On Hold → Rerouted). Each row shows a delay probability mini-bar and colour-coded status badge for all 7 action states.
+Sticky navigation bar with the AtlasAI logo, a live vessel counter (total / affected / at-risk), action buttons (Evaluate, Run Agent, Trigger Event), and the **Aditya** profile dropdown showing name, email, role, active session indicator, and a sign-out option.
 
-**Tabbed right panel:**
-- **🤖 Agent Log** — Full decision audit trail per cycle. Each entry shows action type badge, hypothesis, execution result, confidence meter bar, affected count, and severity level.
-- **📦 Carriers** — Live carrier reliability panel with progress bars. Cards turn red when reliability drops below 70%.
-- **📊 Outcomes** — Outcome evaluation results showing success/failure counts and per-shipment details.
+### Stats Bar
 
-**Human approval banner** — Appears automatically when `Pending Approval` shipments exist, showing agent reasoning and a pulsing VERIFY & EXECUTE button.
+Four glowing stat cards showing: Total Tracked, At Risk (pulses red when active), Pending Approval, and Resolved — all updating live after each agent cycle.
 
-**Chaos dropdown** — 6 pre-built scenarios across High / Medium / Low severity.
+### Live Fleet Tracker
+
+A full-width D3 Natural Earth world map showing all 12 vessels with real-time positional drift, colour-coded by status (cyan / orange / red), dashed route lines, port labels, and alert zone rings. Ships update position every 2.5 seconds. Hover any vessel for a detailed tooltip. Toggle visibility with the Hide/Show Map button.
+
+### Approval Banner
+
+Appears automatically when `Pending Approval` shipments exist. Shows the agent's reasoning excerpt and a pulsing **VERIFY & EXECUTE** button with a scrollable list of all pending shipment IDs.
+
+### Left Panel — Alerts + Shipment Table
+
+Active disruption alerts shown with type, location, description, and severity badge. Below, the full shipment table sorted by risk priority — affected rows are highlighted red. Includes delay probability mini-bar, colour-coded status badge, and paginated navigation for large fleets.
+
+### Right Panel — Tabbed
+
+**🤖 Agent Log** — Full decision audit trail per cycle. Each entry shows action type badge, hypothesis, execution result (🤖 AUTO vs 👤 HUMAN), confidence meter bar, affected count, and severity level.
+
+**📦 Carriers** — Live carrier reliability panel with LSTM integration. Each carrier card shows:
+- Live reliability progress bar (green / amber / red)
+- 🧠 LSTM Tomorrow bar with predicted reliability and trend delta
+- Warning banners for `is_degraded` or `is_degrading` states
+- Click to expand an inline **3-Day LSTM Forecast** panel
+- LSTM status banner at the top (active vs needs training)
+
+**📊 Outcomes** — Outcome evaluation results showing success/failure counts and per-shipment details with delay probability and pass/fail indicators.
+
+### Global Disruption Radar
+
+Live OSINT news cards from MediaStack showing chaos type, matched location (if applicable), article title linked to source, and publisher name.
 
 ---
 
@@ -426,9 +530,13 @@ The Next.js frontend exposes the full agent lifecycle in a single dark-themed da
 | `python-dotenv` | `.env` key loading |
 | `requests` | MediaStack HTTP client |
 | `faker` | Synthetic shipment data generation |
-| `next` | React frontend framework |
+| `numpy` | Pure-NumPy LSTM — no ML framework required |
+| `next` 16 | React frontend framework |
 | `typescript` | Type safety across all frontend interfaces |
-| `tailwindcss` | Dashboard styling |
+| `tailwindcss` 4 | Dashboard styling |
+| `d3` | World map rendering + fleet visualisation |
+| `topojson-client` | TopoJSON geometry decoding for country outlines |
+| `world-atlas` | Natural Earth country geometry dataset |
 
 ---
 
@@ -443,11 +551,20 @@ The Next.js frontend exposes the full agent lifecycle in a single dark-themed da
 **`FileNotFoundError: simulated_shipments.json`**
 → Run `python main.py` from inside the `backend/` directory, not the project root.
 
+**`Model not found at backend/ml/models/carrier_lstm.npz`**
+→ Run `python ml/train.py` from inside `backend/` before starting the server. The LSTM banner in the Carriers tab will show a yellow warning until training is complete.
+
+**LSTM predictions not appearing in the dashboard**
+→ The `/api/ml-predictions` endpoint returns `ml_available: false` if the model file is missing. Run `python ml/train.py` and restart the backend.
+
 **ChromaDB not persisting between runs**
 → The `chroma_db/` folder is auto-created next to `memory.py`. Ensure the `backend/` directory is writable.
 
 **Agent always responds "System normal"**
-→ No shipments are `At Risk`. Either trigger a chaos event via the dashboard, or check that `auto_flag_at_risk()` has In Transit shipments to scan (delivered shipments are skipped).
+→ No shipments are `At Risk`. Either trigger a chaos event via the dashboard, or check that `auto_flag_at_risk()` has `In Transit` shipments to scan (delivered shipments are skipped).
+
+**World map not rendering / blank**
+→ The map fetches the world atlas GeoJSON from `cdn.jsdelivr.net` on load. Ensure your browser has internet access. If offline, the map container will still render with the ocean background and vessel markers.
 
 **Frontend can't reach backend**
 → Ensure `python main.py` is running on port 8000 before starting the Next.js dev server. CORS is open to all origins by default.
@@ -461,11 +578,18 @@ The Next.js frontend exposes the full agent lifecycle in a single dark-themed da
 - [x] Outcome evaluation + ChromaDB failure tagging
 - [x] Live carrier reliability tracker
 - [x] Full agent audit trail with timestamps
+- [x] Pure-NumPy dual-head LSTM for carrier reliability + degradation forecasting
+- [x] 3-day autoregressive LSTM forecast per carrier
+- [x] LSTM risk flags integrated into agent observe/reason nodes
+- [x] Real-time D3 world map with live fleet tracking
+- [x] Chaos-aware ship status (affected ships shown in red on map)
+- [x] User profile (Aditya — Logistics Analyst)
 - [ ] Connect to real carrier APIs (FedEx, DHL, Maersk)
 - [ ] Persistent state with PostgreSQL or Redis
 - [ ] Slack / email notifications for HIGH severity escalations
 - [ ] Multi-agent coordination for large-scale disruptions
 - [ ] Docker + one-command deployment guide
+- [ ] AIS integration for real vessel position data
 
 ---
 
@@ -485,11 +609,11 @@ This project is licensed under the **MIT License** — see the [LICENSE](LICENSE
 
 ---
 
-## 👤 Author
+## 👤 Authors
 
-**Arnav** - AI/ML Lead <br>
-**Sarvesh** - Backend Lead <br>
-**Atharva** - Frontend Lead <br>
+**Arnav** — AI/ML Lead  
+**Sarvesh** — Backend Lead  
+**Atharva** — Frontend Lead  
 
 For issues, suggestions, or questions, please [open a GitHub issue](https://github.com/andy1924/AtlasAI/issues).
 
@@ -497,6 +621,6 @@ For issues, suggestions, or questions, please [open a GitHub issue](https://gith
 
 <div align="center">
 
-**Version 3.0.0** · Last Updated March 2026 · Active Development
+**Version 4.0.0** · Last Updated March 2026 · Active Development
 
 </div>
