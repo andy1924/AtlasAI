@@ -100,6 +100,9 @@ STEP 2 — Paste the three endpoints below into main.py,
 """
 
 # ── Endpoint 1: Current predictions for all carriers ────────────────────────
+@app.get("/")
+def root():
+    return {"status": "running"}
 
 @app.get("/api/ml-predictions")
 def get_ml_predictions():
