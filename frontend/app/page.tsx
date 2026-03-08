@@ -271,21 +271,22 @@ function ShipTrackingMap({ ships, alerts }: { ships: ShipPosition[]; alerts: Ale
         <span className="text-slate-400"> affected</span>
       </div>
       {tooltip && (
-        <div className="fixed z-50 pointer-events-none" style={{ left:tooltip.x+14, top:tooltip.y-10 }}>
-          <div className="rounded-xl p-3 shadow-2xl text-xs min-w-48" style={{ background:"#080f1f", border:"1px solid #1e3a5f" }}>
-            <div className="flex items-center gap-2 mb-2">
-              <div className={`w-2 h-2 rounded-full ${tooltip.ship.status==="affected"?"bg-red-500":tooltip.ship.status==="at-risk"?"bg-orange-400":"bg-cyan-400"}`} />
+        <div className="fixed z-50 pointer-events-none tooltip-in" style={{ left:tooltip.x+14, top:tooltip.y-10 }}>
+          <div className="rounded-xl p-3 shadow-2xl text-xs min-w-52" style={{ background:"#080f1f", border:`1.5px solid ${tooltip.ship.status==="affected"?"#ef4444":tooltip.ship.status==="at-risk"?"#f97316":"#1e3a5f"}` }}>
+            <div className="flex items-center gap-2 mb-2.5">
+              <div className={`relative w-2.5 h-2.5 rounded-full flex-shrink-0 ${tooltip.ship.status==="affected"?"bg-red-500":tooltip.ship.status==="at-risk"?"bg-orange-400":"bg-cyan-400"}`} />
               <span className="font-bold text-white">{tooltip.ship.name}</span>
+              <span className="ml-auto font-mono" style={{ color:"#334155" }}>{tooltip.ship.id}</span>
             </div>
-            <div className="space-y-1 text-slate-300">
-              <div><span className="text-slate-500">ID: </span>{tooltip.ship.id}</div>
-              <div><span className="text-slate-500">Route: </span>{tooltip.ship.origin} → {tooltip.ship.destination}</div>
-              <div><span className="text-slate-500">Carrier: </span>{tooltip.ship.carrier}</div>
-              <div><span className="text-slate-500">Speed: </span>{tooltip.ship.speed} kts</div>
-              <div><span className="text-slate-500">Cargo: </span>{tooltip.ship.cargo}</div>
-              <div className={`mt-1.5 px-2 py-1 rounded text-center font-bold text-xs ${tooltip.ship.status==="affected"?"bg-red-500/20 text-red-400":tooltip.ship.status==="at-risk"?"bg-orange-500/20 text-orange-400":"bg-cyan-500/20 text-cyan-400"}`}>
-                {tooltip.ship.status==="affected"?"⚠ CHAOS AFFECTED":tooltip.ship.status==="at-risk"?"⚡ AT RISK":"✓ NOMINAL"}
-              </div>
+            <div className="space-y-1.5 text-slate-300">
+              <div className="flex justify-between gap-4"><span style={{ color:"#475569" }}>Route</span><span>{tooltip.ship.origin} → {tooltip.ship.destination}</span></div>
+              <div className="flex justify-between gap-4"><span style={{ color:"#475569" }}>Carrier</span><span>{tooltip.ship.carrier}</span></div>
+              <div className="flex justify-between gap-4"><span style={{ color:"#475569" }}>Speed</span><span className={tooltip.ship.speed===0?"text-red-400 font-bold":""}>{tooltip.ship.speed===0?"STOPPED":`${tooltip.ship.speed} kts`}</span></div>
+              <div className="flex justify-between gap-4"><span style={{ color:"#475569" }}>Cargo</span><span>{tooltip.ship.cargo}</span></div>
+            </div>
+            <div className={`mt-2.5 px-2 py-1.5 rounded-lg text-center font-bold ${tooltip.ship.status==="affected"?"chaos-text bg-red-500/15 text-red-400":tooltip.ship.status==="at-risk"?"bg-orange-500/15 text-orange-400":"bg-cyan-500/15 text-cyan-400"}`}
+              style={{ border:`1px solid ${tooltip.ship.status==="affected"?"rgba(239,68,68,0.4)":tooltip.ship.status==="at-risk"?"rgba(249,115,22,0.4)":"rgba(34,211,238,0.3)"}` }}>
+              {tooltip.ship.status==="affected"?"⚠ CHAOS AFFECTED":tooltip.ship.status==="at-risk"?"⚡ AT RISK":"✓ NOMINAL"}
             </div>
           </div>
         </div>
@@ -358,6 +359,7 @@ export default function Dashboard() {
   const [activeTab,      setActiveTab]      = useState<"logs"|"carriers"|"outcomes">("logs");
   const [currentPage,    setCurrentPage]    = useState(1);
   const [ships,          setShips]          = useState<ShipPosition[]>(BASE_SHIPS);
+  const [lastUpdated,    setLastUpdated]    = useState<string>("");
   const [showMap,        setShowMap]        = useState(true);
   const itemsPerPage = 20;
 
@@ -403,7 +405,7 @@ export default function Dashboard() {
 
   const fetchML = async () => {
     try {
-      const res = await fetch("http://atlasai-production-e108.up.railway.app/api/ml-predictions");
+      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/ml-predictions`);
       const data = await res.json();
       if (data.ml_available && data.predictions) { setMlPreds(data.predictions); setMlReady(true); }
     } catch {}
@@ -413,7 +415,7 @@ export default function Dashboard() {
     if (fCarrier === carrier) { setFCarrier(null); setForecast([]); return; }
     setFCarrier(carrier);
     try {
-      const res = await fetch(`http://atlasai-production-e108.up.railway.app/api/ml-forecast/${carrier}?days=3`);
+      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/ml-forecast/${carrier}?days=3`);
       const data = await res.json();
       if (data.forecast) setForecast(data.forecast);
     } catch {}
@@ -422,23 +424,24 @@ export default function Dashboard() {
   const fetchState = useCallback(async () => {
     try {
       const [sR,aR,nR,cR,hR] = await Promise.all([
-        fetch("http://atlasai-production-e108.up.railway.app/api/shipments"),
-        fetch("http://atlasai-production-e108.up.railway.app/api/alerts"),
-        fetch("http://atlasai-production-e108.up.railway.app/api/news"),
-        fetch("http://atlasai-production-e108.up.railway.app/api/carrier-reliability"),
-        fetch("http://atlasai-production-e108.up.railway.app/api/agent-history"),
+        fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/shipments`),
+        fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/alerts`),
+        fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/news`),
+        fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/carrier-reliability`),
+        fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/agent-history`),
       ]);
       const [sD,aD,nD,cD,hD] = await Promise.all([sR.json(),aR.json(),nR.json(),cR.json(),hR.json()]);
       setShipments(sD.shipments||[]); setAlerts(aD.alerts||[]); setLiveNews(nD.news||[]);
       setCarrierStats(cD.carrier_reliability||[]); setAgentLogs(hD.history||[]);
     } catch(e) { console.error("Failed to fetch state:", e); }
     await fetchML();
+    setLastUpdated(new Date().toLocaleTimeString());
   }, []);
 
   useEffect(() => { fetchState(); }, [fetchState]);
 
   const handleChaos = async (scenario: ChaosScenario) => {
-    await fetch("http://atlasai-production-e108.up.railway.app/api/trigger-chaos", {
+    await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/trigger-chaos`, {
       method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify(scenario),
     });
     await handleRunAgent();
@@ -448,7 +451,7 @@ export default function Dashboard() {
   const handleRunAgent = async () => {
     setIsAgentRunning(true);
     try {
-      const res = await fetch("http://atlasai-production-e108.up.railway.app/api/run-agent", { method:"POST" });
+      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/run-agent`, { method:"POST" });
       const data = await res.json();
       setShipments(data.updated_shipments);
       await fetchState();
@@ -458,7 +461,7 @@ export default function Dashboard() {
 
   const handleApprove = async () => {
     try {
-      const res = await fetch("http://atlasai-production-e108.up.railway.app/api/approve-actions", { method:"POST" });
+      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/approve-actions`, { method:"POST" });
       const data = await res.json();
       setShipments(data.updated_shipments);
       await fetchState();
@@ -468,7 +471,7 @@ export default function Dashboard() {
   const handleEvaluateOutcomes = async () => {
     setIsEvaluating(true);
     try {
-      const res = await fetch("http://atlasai-production-e108.up.railway.app/api/evaluate-outcomes", { method:"POST" });
+      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/evaluate-outcomes`, { method:"POST" });
       const data = await res.json();
       setOutcomeResult(data.results);
       setActiveTab("outcomes");
@@ -545,14 +548,19 @@ export default function Dashboard() {
           </div>
 
           <div className="flex items-center gap-2.5">
+            <button onClick={fetchState} title="Refresh data"
+              className="hidden sm:flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm transition-all hover:scale-105 active:scale-95"
+              style={{ background:"rgba(51,65,85,0.4)", border:"1px solid rgba(51,65,85,0.7)", color:"#94a3b8" }}>
+              ↻
+            </button>
             <button onClick={handleEvaluateOutcomes} disabled={isEvaluating}
-              className="hidden sm:flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold transition-all disabled:opacity-50"
+              className="hidden sm:flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold transition-all disabled:opacity-50 hover:scale-105 active:scale-95"
               style={{ background:"rgba(20,184,166,0.12)", border:"1px solid rgba(20,184,166,0.35)", color:"#2dd4bf" }}>
               {isEvaluating ? "⟳ Evaluating..." : "📊 Evaluate"}
             </button>
             <button onClick={handleRunAgent} disabled={isAgentRunning}
-              className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-bold transition-all disabled:opacity-50"
-              style={{ background:"linear-gradient(135deg,#1d4ed8,#1e40af)", boxShadow:"0 0 20px rgba(29,78,216,0.35)" }}>
+              className="btn-breathe flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-bold transition-all disabled:opacity-50 hover:scale-105 active:scale-95"
+              style={{ background:"linear-gradient(135deg,#1d4ed8,#1e40af)" }}>
               {isAgentRunning ? "⟳ Processing..." : "▶ Run Agent"}
             </button>
             <div className="relative group z-50">
@@ -566,7 +574,6 @@ export default function Dashboard() {
                   {chaosScenarios.map((sc,idx) => (
                     <button key={idx} onClick={() => handleChaos(sc)} disabled={isAgentRunning}
                       className="w-full text-left px-4 py-3 rounded-lg transition-colors flex flex-col gap-0.5 disabled:opacity-50"
-                      style={{ hover:"background:rgba(127,29,29,0.3)" }}
                       onMouseEnter={e => (e.currentTarget.style.background="rgba(127,29,29,0.3)")}
                       onMouseLeave={e => (e.currentTarget.style.background="transparent")}>
                       <span className="font-bold text-sm text-red-400">{sc.type}</span>
@@ -590,33 +597,41 @@ export default function Dashboard() {
             { label:"At Risk",       value:atRiskCount,       color:atRiskCount>0?"text-red-400":"text-slate-500",  icon:"🔴", glow:atRiskCount>0?"rgba(220,38,38,0.12)":"transparent", border:atRiskCount>0?"rgba(220,38,38,0.4)":"rgba(30,41,59,0.5)", pulse:atRiskCount>0 },
             { label:"Pending Approval", value:pendingCount,   color:pendingCount>0?"text-amber-400":"text-slate-500", icon:"⏳", glow:pendingCount>0?"rgba(217,119,6,0.12)":"transparent", border:pendingCount>0?"rgba(217,119,6,0.4)":"rgba(30,41,59,0.5)" },
             { label:"Resolved",      value:resolvedCount,     color:"text-emerald-400", icon:"✅", glow:"rgba(16,185,129,0.12)", border:"rgba(16,185,129,0.3)" },
-          ].map(stat => (
-            <div key={stat.label} className={`rounded-2xl p-4 ${(stat as {pulse?:boolean}).pulse?"animate-pulse":""}`}
-              style={{ background:`radial-gradient(ellipse at top left, ${stat.glow}, transparent)`, border:`1px solid ${stat.border}`, backdropFilter:"blur(10px)" }}>
+          ].map((stat, i) => (
+            <div key={stat.label} className={`fade-up rounded-2xl p-4`}
+              style={{ background:`radial-gradient(ellipse at top left, ${stat.glow}, transparent)`, border:`1px solid ${stat.border}`, backdropFilter:"blur(10px)", animationDelay:`${i*80}ms` }}>
               <div className="flex items-center justify-between mb-3">
                 <span className="text-xs uppercase tracking-widest" style={{ color:"#4a7aaa" }}>{stat.label}</span>
                 <span className="text-lg">{stat.icon}</span>
               </div>
-              <span className={`text-3xl font-bold tracking-tight ${stat.color}`}>{stat.value}</span>
+              <div className="flex items-end gap-2">
+                <span className={`text-3xl font-bold tracking-tight ${stat.color}`}>{stat.value}</span>
+                {(stat as {pulse?:boolean}).pulse && stat.value > 0 && (
+                  <span className="text-xs text-red-400 font-semibold mb-1 animate-pulse">ACTIVE</span>
+                )}
+              </div>
             </div>
           ))}
         </div>
 
         {/* APPROVAL BANNER */}
         {pendingApprovals.length > 0 && (
-          <div className="p-5 rounded-2xl" style={{ background:"rgba(92,40,5,0.25)", border:"1px solid rgba(217,119,6,0.5)", backdropFilter:"blur(10px)" }}>
+          <div className="approval-glow p-5 rounded-2xl" style={{ background:"rgba(92,40,5,0.25)", border:"1px solid rgba(217,119,6,0.5)", backdropFilter:"blur(10px)" }}>
             <div className="flex justify-between items-center mb-3">
               <div>
-                <h2 className="text-lg font-bold text-amber-400">⚠️ Human Authorization Required</h2>
-                <p className="text-sm mt-0.5" style={{ color:"rgba(253,230,138,0.7)" }}>
-                  Agent halted execution. {pendingApprovals.length} shipment(s) require your approval.
+                <div className="flex items-center gap-2 mb-1">
+                  <h2 className="text-lg font-bold text-amber-400">⚠️ Human Authorization Required</h2>
+                  <span className="px-2 py-0.5 rounded-full text-xs font-bold bg-amber-500/20 text-amber-300 border border-amber-500/40">{pendingApprovals.length} pending</span>
+                </div>
+                <p className="text-sm" style={{ color:"rgba(253,230,138,0.7)" }}>
+                  Agent halted execution — these shipments need your sign-off before proceeding.
                 </p>
                 {lastLog && <p className="text-xs mt-1.5 font-mono" style={{ color:"rgba(253,230,138,0.5)" }}>↳ {lastLog.hypothesis?.slice(0,140)}...</p>}
               </div>
               <button onClick={handleApprove}
-                className="px-6 py-3 rounded-xl font-bold text-sm flex-shrink-0 animate-pulse"
-                style={{ background:"linear-gradient(135deg,#d97706,#b45309)", boxShadow:"0 0 25px rgba(217,119,6,0.4)" }}>
-                VERIFY & EXECUTE
+                className="px-6 py-3 rounded-xl font-bold text-sm flex-shrink-0 transition-transform hover:scale-105 active:scale-95"
+                style={{ background:"linear-gradient(135deg,#d97706,#b45309)", boxShadow:"0 0 28px rgba(217,119,6,0.55)" }}>
+                ✓ VERIFY & EXECUTE
               </button>
             </div>
             <div className="flex gap-2 overflow-x-auto pb-1">
@@ -624,7 +639,8 @@ export default function Dashboard() {
                 <div key={s.shipment_id} className="flex-shrink-0 px-3 py-1.5 rounded-lg text-xs"
                   style={{ background:"rgba(15,23,42,0.6)", border:"1px solid rgba(217,119,6,0.3)" }}>
                   <span className="text-amber-400 font-mono">{s.shipment_id}</span>
-                  <span style={{ color:"#64748b" }}> · {s.carrier} · risk: {(s.delay_probability*100).toFixed(0)}%</span>
+                  <span style={{ color:"#64748b" }}> · {s.carrier} · risk: </span>
+                  <span className={s.delay_probability>0.6?"text-red-400 font-bold":"text-amber-400"}>{(s.delay_probability*100).toFixed(0)}%</span>
                 </div>
               ))}
             </div>
@@ -645,6 +661,11 @@ export default function Dashboard() {
                 <span><span className="text-orange-400 font-bold">{atRiskShips}</span> at risk</span>
                 <span><span className="text-red-400 font-bold">{affectedShips}</span> affected</span>
               </div>
+              {lastUpdated && (
+                <span className="hidden md:block text-xs" style={{ color:"#334155" }}>
+                  Updated {lastUpdated}
+                </span>
+              )}
               <button onClick={() => setShowMap(v=>!v)}
                 className="text-xs px-3 py-1.5 rounded-lg transition-all"
                 style={{ border:"1px solid rgba(51,65,85,0.7)", color:"#64748b" }}
@@ -676,22 +697,27 @@ export default function Dashboard() {
                 )}
               </div>
               {alerts.length === 0 ? (
-                <p className="text-center py-6 italic text-sm" style={{ color:"#334155" }}>No active disruptions detected.</p>
+                <div className="text-center py-8">
+                  <div className="text-3xl mb-2">✅</div>
+                  <p className="text-sm font-medium text-emerald-400">All clear — no active disruptions</p>
+                  <p className="text-xs mt-1" style={{ color:"#334155" }}>Trigger an event or wait for the agent to flag shipments.</p>
+                </div>
               ) : (
                 <div className="space-y-2">
                   {alerts.map(a => (
-                    <div key={a.id} className="rounded-xl p-3.5 flex justify-between items-center"
-                      style={{ background:"rgba(127,29,29,0.1)", border:"1px solid rgba(127,29,29,0.35)" }}>
+                    <div key={a.id}
+                      className={`rounded-xl p-3.5 flex justify-between items-center ${a.severity==="High" ? "chaos-flash" : ""}`}
+                      style={a.severity!=="High" ? { background:"rgba(127,29,29,0.1)", border:"1px solid rgba(127,29,29,0.35)" } : undefined}>
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2 mb-1">
-                          <strong className="text-red-400 text-sm">{a.type}</strong>
+                          <strong className={`text-sm ${a.severity==="High" ? "chaos-text text-red-300" : "text-red-400"}`}>{a.type}</strong>
                           <span className="text-slate-400 text-sm">@ {a.location}</span>
                         </div>
                         <p className="text-xs truncate" style={{ color:"#64748b" }}>{a.description}</p>
                       </div>
                       <span className={`ml-4 flex-shrink-0 px-2.5 py-1 rounded-lg text-xs font-bold ${
-                        a.severity==="High"?"bg-red-900/40 text-red-300 border border-red-700/40":
-                        a.severity==="Medium"?"bg-orange-900/40 text-orange-300 border border-orange-700/40":
+                        a.severity==="High"  ? "severity-pulse bg-red-900/40 text-red-300 border border-red-700/40" :
+                        a.severity==="Medium"? "bg-orange-900/40 text-orange-300 border border-orange-700/40" :
                         "bg-yellow-900/40 text-yellow-300 border border-yellow-700/40"
                       }`}>{a.severity}</span>
                     </div>
@@ -718,14 +744,16 @@ export default function Dashboard() {
                   <tbody>
                     {currentShipments.map(s => {
                       const isAffected = activeAlertLocations.includes(s.origin) || activeAlertLocations.includes(s.destination);
+                      const isAtRisk = s.status === "At Risk";
                       return (
-                        <tr key={s.shipment_id} className="border-b transition-colors"
-                          style={{ borderColor:"rgba(20,40,70,0.35)", background: isAffected?"rgba(127,29,29,0.06)":"transparent" }}
-                          onMouseEnter={e => (e.currentTarget.style.background=isAffected?"rgba(127,29,29,0.1)":"rgba(15,23,42,0.4)")}
-                          onMouseLeave={e => (e.currentTarget.style.background=isAffected?"rgba(127,29,29,0.06)":"transparent")}>
+                        <tr key={s.shipment_id} className={`border-b transition-all ${isAtRisk?"chaos-flash":""}`}
+                          style={!isAtRisk ? { borderColor:"rgba(20,40,70,0.35)", background: isAffected?"rgba(127,29,29,0.06)":"transparent" } : { borderColor:"rgba(220,38,38,0.3)" }}
+                          onMouseEnter={e => { if(!isAtRisk) e.currentTarget.style.background=isAffected?"rgba(127,29,29,0.12)":"rgba(15,23,42,0.4)"; }}
+                          onMouseLeave={e => { if(!isAtRisk) e.currentTarget.style.background=isAffected?"rgba(127,29,29,0.06)":"transparent"; }}>
                           <td className="py-2.5 pr-4 font-mono text-xs">
                             {isAffected && <span className="text-red-500 mr-1">⚠</span>}
-                            <span style={{ color: isAffected?"#fca5a5":"#94a3b8" }}>{s.shipment_id}</span>
+                            {isAtRisk && !isAffected && <span className="text-red-500 mr-1 chaos-text">●</span>}
+                            <span style={{ color: isAffected||isAtRisk?"#fca5a5":"#94a3b8" }}>{s.shipment_id}</span>
                           </td>
                           <td className="py-2.5 pr-4 text-xs text-slate-300">{s.origin} → {s.destination}</td>
                           <td className="py-2.5 pr-4 text-xs" style={{ color:"#64748b" }}>{s.carrier}</td>
@@ -789,12 +817,16 @@ export default function Dashboard() {
                 {activeTab==="logs" && (
                   <div className="space-y-3">
                     {agentLogs.length===0
-                      ? <p className="text-center py-10 italic text-sm" style={{ color:"#334155" }}>Awaiting system events...</p>
+                      ? <div className="text-center py-10">
+                      <div className="text-3xl mb-2">🤖</div>
+                      <p className="text-sm font-medium" style={{ color:"#4a7aaa" }}>No agent activity yet</p>
+                      <p className="text-xs mt-1" style={{ color:"#334155" }}>Run the agent or trigger a chaos event to see decisions here.</p>
+                    </div>
                       : agentLogs.map((log,idx) => (
-                        <div key={idx} className="p-3.5 rounded-xl text-sm" style={{
-                          background: log.action_type==="HUMAN_APPROVED"?"rgba(6,78,59,0.15)":log.action_type==="ESCALATE"?"rgba(92,40,5,0.15)":log.action_type==="EVALUATE"?"rgba(15,118,110,0.1)":"rgba(8,17,35,0.6)",
-                          border: `1px solid ${log.action_type==="HUMAN_APPROVED"?"rgba(16,185,129,0.25)":log.action_type==="ESCALATE"?"rgba(217,119,6,0.25)":log.action_type==="EVALUATE"?"rgba(20,184,166,0.25)":"rgba(20,40,70,0.5)"}`,
-                        }}>
+                        <div key={idx} className={`log-entry p-3.5 rounded-xl text-sm ${log.action_type==="ESCALATE"?"chaos-flash":""}`} style={log.action_type!=="ESCALATE" ? {
+                          background: log.action_type==="HUMAN_APPROVED"?"rgba(6,78,59,0.15)":log.action_type==="EVALUATE"?"rgba(15,118,110,0.1)":"rgba(8,17,35,0.6)",
+                          border: `1px solid ${log.action_type==="HUMAN_APPROVED"?"rgba(16,185,129,0.25)":log.action_type==="EVALUATE"?"rgba(20,184,166,0.25)":"rgba(20,40,70,0.5)"}`,
+                        } : undefined}>
                           <div className="flex justify-between items-center mb-2">
                             <ActionTypeBadge actionType={log.action_type}/>
                             <span className="text-xs" style={{ color:"#334155" }}>{log.timestamp?new Date(log.timestamp).toLocaleTimeString():""}</span>
@@ -824,7 +856,10 @@ export default function Dashboard() {
                       {mlReady?"🧠 LSTM Active — next-day reliability predictions":"⚠️ LSTM not loaded — run: python backend/ml/train.py"}
                     </div>
                     {carrierStats.length===0
-                      ? <p className="text-center py-8 italic text-sm" style={{ color:"#334155" }}>Loading carrier data...</p>
+                      ? <div className="text-center py-8">
+                      <div className="text-2xl mb-2">📦</div>
+                      <p className="text-sm" style={{ color:"#334155" }}>Run the agent to populate carrier stats.</p>
+                    </div>
                       : carrierStats.map(cs => {
                         const ml=mlPreds[cs.carrier], selected=fCarrier===cs.carrier;
                         return (
@@ -931,7 +966,11 @@ export default function Dashboard() {
                 <h2 className="font-semibold text-blue-300">Global Disruption Radar</h2>
               </div>
               {liveNews.length===0
-                ? <p className="text-center py-4 italic text-sm" style={{ color:"#334155" }}>Scanning global OSINT feeds...</p>
+                ? <div className="text-center py-6">
+                <div className="text-2xl mb-2">🛰</div>
+                <p className="text-sm font-medium" style={{ color:"#4a7aaa" }}>Scanning OSINT feeds...</p>
+                <p className="text-xs mt-1" style={{ color:"#334155" }}>Requires MediaStack API key + active backend.</p>
+              </div>
                 : <div className="space-y-2.5">
                     {liveNews.map((item,idx) => (
                       <div key={idx} className="p-3 rounded-xl text-sm" style={{ background:"rgba(8,17,35,0.6)", border:"1px solid rgba(20,40,70,0.5)" }}>
