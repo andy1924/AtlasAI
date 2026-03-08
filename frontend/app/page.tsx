@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import * as d3 from "d3";
 import * as topojson from "topojson-client";
+const API = process.env.NEXT_PUBLIC_API_URL
 
 interface Shipment {
   shipment_id: string;
@@ -405,7 +406,7 @@ export default function Dashboard() {
 
   const fetchML = async () => {
     try {
-      const res = await fetch(`https://atlasai-fxkj.onrender.com/api/ml-predictions`);
+      const res = await fetch(`${API}/api/ml-predictions`);
       const data = await res.json();
       if (data.ml_available && data.predictions) { setMlPreds(data.predictions); setMlReady(true); }
     } catch {}
@@ -415,7 +416,7 @@ export default function Dashboard() {
     if (fCarrier === carrier) { setFCarrier(null); setForecast([]); return; }
     setFCarrier(carrier);
     try {
-      const res = await fetch(`https://atlasai-fxkj.onrender.com/api/ml-forecast/${carrier}?days=3`);
+      const res = await fetch(`${API}/api/ml-forecast/${carrier}?days=3`);
       const data = await res.json();
       if (data.forecast) setForecast(data.forecast);
     } catch {}
@@ -424,11 +425,11 @@ export default function Dashboard() {
   const fetchState = useCallback(async () => {
     try {
       const [sR,aR,nR,cR,hR] = await Promise.all([
-        fetch(`https://atlasai-fxkj.onrender.com/api/shipments`),
-        fetch(`https://atlasai-fxkj.onrender.com/api/alerts`),
-        fetch(`https://atlasai-fxkj.onrender.com/api/news`),
-        fetch(`https://atlasai-fxkj.onrender.com/api/carrier-reliability`),
-        fetch(`https://atlasai-fxkj.onrender.com/api/agent-history`),
+        fetch(`${API}/api/shipments`),
+        fetch(`${API}/api/alerts`),
+        fetch(`${API}/api/news`),
+        fetch(`${API}/api/carrier-reliability`),
+        fetch(`${API}/api/agent-history`),
       ]);
       const [sD,aD,nD,cD,hD] = await Promise.all([sR.json(),aR.json(),nR.json(),cR.json(),hR.json()]);
       setShipments(sD.shipments||[]); setAlerts(aD.alerts||[]); setLiveNews(nD.news||[]);
@@ -441,7 +442,7 @@ export default function Dashboard() {
   useEffect(() => { fetchState(); }, [fetchState]);
 
   const handleChaos = async (scenario: ChaosScenario) => {
-    await fetch(`https://atlasai-fxkj.onrender.com/api/trigger-chaos`, {
+    await fetch(`${API}/api/trigger-chaos`, {
       method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify(scenario),
     });
     await handleRunAgent();
@@ -451,7 +452,7 @@ export default function Dashboard() {
   const handleRunAgent = async () => {
     setIsAgentRunning(true);
     try {
-      const res = await fetch(`https://atlasai-fxkj.onrender.com/api/run-agent`, { method:"POST" });
+      const res = await fetch(`${API}/api/run-agent`, { method:"POST" });
       const data = await res.json();
       setShipments(data.updated_shipments);
       await fetchState();
@@ -461,7 +462,7 @@ export default function Dashboard() {
 
   const handleApprove = async () => {
     try {
-      const res = await fetch(`https://atlasai-fxkj.onrender.com/api/approve-actions`, { method:"POST" });
+      const res = await fetch(`${API}/api/approve-actions`, { method:"POST" });
       const data = await res.json();
       setShipments(data.updated_shipments);
       await fetchState();
@@ -471,7 +472,7 @@ export default function Dashboard() {
   const handleEvaluateOutcomes = async () => {
     setIsEvaluating(true);
     try {
-      const res = await fetch(`https://atlasai-fxkj.onrender.com/api/evaluate-outcomes`, { method:"POST" });
+      const res = await fetch(`${API}/api/evaluate-outcomes`, { method:"POST" });
       const data = await res.json();
       setOutcomeResult(data.results);
       setActiveTab("outcomes");
