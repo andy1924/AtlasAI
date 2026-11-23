@@ -6,7 +6,7 @@ The LSTM predictor replaces static partner_reliability
 with a forward-looking predicted score in auto_flag_at_risk().
 """
 
-import os, re, sys
+import os, sys
 from dotenv import load_dotenv
 from langchain_core.messages import SystemMessage, HumanMessage
 from langchain_openai import ChatOpenAI
@@ -14,6 +14,7 @@ from langgraph.graph import StateGraph, START, END
 
 from state  import AgentState, Shipment, Alert
 from memory import get_past_poa
+from decision_policy import parse_decision, requires_approval
 
 # ── LSTM predictor (graceful fallback if model not trained yet) ──
 ML_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "ml")
@@ -50,8 +51,11 @@ def auto_flag_at_risk(shipments: list) -> list:
     LSTM replaces the static partner_reliability field — the agent
     now acts on WHERE the carrier is heading, not where it was.
     """
+    predictions_ready = False
     if LSTM_AVAILABLE:
-        try: refresh_predictions(shipments)
+        try:
+            refresh_predictions(shipments)
+            predictions_ready = True
         except Exception as e:
             print(f"  ⚠️ LSTM refresh failed: {e}")
 
@@ -68,7 +72,8 @@ def auto_flag_at_risk(shipments: list) -> list:
         reasons = []
 
         # Signal 1 — LSTM prediction (replaces static reliability)
-        lstm_rel = get_predicted_reliability(s.carrier)
+        lstm_rel = (get_predicted_reliability(s.carrier)
+                    if predictions_ready else s.partner_reliability)
         if   lstm_rel < 0.72:
             score += 0.45
             reasons.append(f"LSTM: carrier critical ({lstm_rel:.2f})")
@@ -227,17 +232,7 @@ def decide(state: AgentState):
     resp    = llm.invoke(msgs + [prompt])
     content = resp.content
 
-    act_m   = re.search(r"Action:\s*(REROUTE|HOLD|SWITCH_CARRIER|EXPEDITE|ESCALATE|MONITOR)",
-                         content, re.I)
-    conf_m  = re.search(r"Confidence:\s*(\d+)", content)
-
-    action  = act_m.group(1).upper()   if act_m   else memory["action_type"]
-    conf    = int(conf_m.group(1))     if conf_m  else memory["confidence_hint"]
-
-    # Safety guardrail: low confidence → escalate
-    if conf < 45 and severity != "High":
-        content += "\n[LOW CONFIDENCE — escalated] [NEEDS APPROVAL]"
-        action   = "ESCALATE"
+    action, conf, content = parse_decision(content, severity)
 
     return {
         "decision": content, "messages": msgs + [resp],
@@ -257,7 +252,9 @@ def act(state: AgentState):
     if "Maintain current routes" in decision:
         return {"action_taken": "✅ No action needed.", "shipments": shipments}
 
-    needs_approval = "[NEEDS APPROVAL]" in decision.upper()
+    needs_approval = requires_approval(
+        action_type, state.get("confidence", 0), state.get("severity_level", "Unknown")
+    ) or "[NEEDS APPROVAL]" in decision.upper()
     count = 0
 
     for s in shipments:

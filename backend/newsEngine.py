@@ -31,7 +31,7 @@ def get_latest_news():
     params = {"access_key": API_KEY, "languages": "en", "limit": 50}
 
     try:
-        response = requests.get(url, params=params)
+        response = requests.get(url, params=params, timeout=10)
 
         if response.status_code != 200:
             print("News API request failed")
@@ -101,17 +101,6 @@ def get_latest_news():
                 "event_type": event_type,
                 "location": matched_location.title() if matched_location else None
             })
-
-    # Demo Fallback (so UI never empty)
-    if len(chaos_alerts) == 0:
-        chaos_alerts.append({
-            "title": "Storm warning issued for coastal regions near major transit hubs.",
-            "source": "Reuters",
-            "url": "#",
-            "chaos_type": "STORM",
-            "event_type": "Natural Event",
-            "location": None
-        })
 
     return chaos_alerts
 

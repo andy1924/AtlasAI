@@ -23,6 +23,18 @@
 
 ---
 
+## Latest local improvements
+
+The home route is now a responsive AtlasAI landing page with original port imagery and an interactive decision walkthrough. The existing application is at `/dashboard`.
+
+Run the frontend with `cd frontend`, `npm ci`, and `npm run dev`. The landing page works without backend credentials. The dashboard uses `http://localhost:8000` by default; set `NEXT_PUBLIC_API_URL` for another API.
+
+Agent and API fixes enforce operator approval for high severity, uncertain, or malformed decisions; preserve shipment state on failed agent cycles; reject overlapping mutations; avoid reopening delivered shipments; and make repeated empty approvals a no-op. The frontend displays request failures and the event presets use active shipment locations. Fleet positions are labeled as simulated, and the news feed no longer creates a fabricated fallback article.
+
+Backend regression suite: `python -m unittest discover -s tests -v` after installing backend dependencies. External AI, memory, forecasting, and news services are mocked in this suite. This remains an in-memory, single-process prototype.
+
+The hero image was generated with the built-in image generation tool. Brief: an ultra-wide documentary-style container port with muted rust, charcoal, and steel-blue tones, natural overcast light, and no text or logos. Asset: `frontend/public/images/atlas-port.png`.
+
 ## 📌 Overview
 
 AtlasAI is a full-stack autonomous logistics intelligence system built around a 4-node LangGraph agent. When a disruption is detected — whether injected manually or auto-flagged by the proactive observer — the agent reasons about root causes and cascading impact, retrieves the closest historical Plan of Action from ChromaDB using semantic similarity, chooses from a structured action menu, and either executes the mitigation autonomously or escalates it based on severity and confidence.

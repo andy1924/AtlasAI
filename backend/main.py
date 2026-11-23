@@ -1,7 +1,11 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 import uvicorn
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
+from typing import Literal
+from functools import wraps
+from threading import Lock
+import logging
 import json
 import os
 from datetime import datetime
@@ -10,6 +14,7 @@ from newsEngine import get_latest_news
 from memory import add_learned_action, mark_outcome
 from state import Shipment, Alert, AgentState, CarrierStats
 from agent import app as agent_app
+from decision_policy import requires_approval
 import sys, os
 ML_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "ml")
 sys.path.insert(0, ML_DIR)
@@ -24,6 +29,8 @@ app = FastAPI(title="AtlasAI Logistics API")
 
 origins = [
     "https://atlas-bcyhy3z17-andy1924s-projects.vercel.app",
+    "http://localhost:3000",
+    "http://127.0.0.1:3000",
 ]
 
 app.add_middleware(
@@ -46,6 +53,20 @@ agent_history: list[dict] = []
 
 # Carrier stats — built from shipment data, updated live
 carrier_stats: dict[str, CarrierStats] = {}
+mutation_lock = Lock()
+
+
+def exclusive_mutation(function):
+    """Prevent overlapping simulations, approvals, and agent cycles."""
+    @wraps(function)
+    def wrapped(*args, **kwargs):
+        if not mutation_lock.acquire(blocking=False):
+            raise HTTPException(409, "Another operation is running. Please try again when it finishes.")
+        try:
+            return function(*args, **kwargs)
+        finally:
+            mutation_lock.release()
+    return wrapped
 
 try:
     with open(JSON_PATH, "r", encoding="utf-8-sig") as file:
@@ -255,13 +276,14 @@ def get_carrier_reliability():
 
 
 class ChaosRequest(BaseModel):
-    type: str
-    location: str
-    severity: str
-    description: str
+    type: str = Field(min_length=1, max_length=100)
+    location: str = Field(min_length=1, max_length=200)
+    severity: Literal["High", "Medium", "Low"]
+    description: str = Field(min_length=1, max_length=2000)
 
 
 @app.post("/api/trigger-chaos")
+@exclusive_mutation
 def trigger_chaos(chaos: ChaosRequest):
     global current_shipments, current_alerts
 
@@ -276,7 +298,9 @@ def trigger_chaos(chaos: ChaosRequest):
 
     affected = 0
     for shipment in current_shipments:
-        if shipment.origin == chaos.location or shipment.destination == chaos.location:
+        if shipment.status != "Delivered" and (
+            shipment.origin == chaos.location or shipment.destination == chaos.location
+        ):
             shipment.status = "At Risk"
             shipment.delay_probability = 0.95
             affected += 1
@@ -288,13 +312,14 @@ def trigger_chaos(chaos: ChaosRequest):
 
 
 @app.post("/api/run-agent")
+@exclusive_mutation
 def run_agent():
     global current_shipments
 
     initial_state: AgentState = {
         "messages": [],
-        "shipments": current_shipments,
-        "alerts": current_alerts,
+        "shipments": [shipment.model_copy(deep=True) for shipment in current_shipments],
+        "alerts": [alert.model_copy(deep=True) for alert in current_alerts],
         "hypothesis": "",
         "decision": "",
         "action_taken": "",
@@ -303,7 +328,12 @@ def run_agent():
         "severity_level": ""
     }
 
-    final_state = agent_app.invoke(initial_state)
+    before = {s.shipment_id: s.model_dump() for s in current_shipments}
+    try:
+        final_state = agent_app.invoke(initial_state)
+    except Exception:
+        logging.exception("Agent cycle failed; shipment state was not committed")
+        raise HTTPException(502, "Agent cycle failed. Shipment state is unchanged; please retry.") from None
     current_shipments = final_state.get("shipments", current_shipments)
 
     log_entry = {
@@ -314,12 +344,13 @@ def run_agent():
         "confidence": final_state.get("confidence", 0),
         "action_type": final_state.get("action_type", "UNKNOWN"),
         "severity_level": final_state.get("severity_level", "Unknown"),
-        "shipments_affected": len([
-            s for s in current_shipments
-            if s.status in ["Rerouted (Auto)", "Pending Approval", "On Hold",
-                            "Carrier Switch Pending", "Expedited"]
-        ]),
-        "autonomous": "[NEEDS APPROVAL]" not in (final_state.get("decision") or "")
+        "shipments_affected": sum(
+            s.model_dump() != before.get(s.shipment_id) for s in current_shipments
+        ),
+        "autonomous": not requires_approval(
+            final_state.get("action_type", ""), final_state.get("confidence", 0),
+            final_state.get("severity_level", "Unknown")
+        ) and "[NEEDS APPROVAL]" not in (final_state.get("decision") or "").upper()
     }
     agent_history.insert(0, log_entry)
 
@@ -331,12 +362,15 @@ def run_agent():
 
 
 @app.post("/api/approve-actions")
+@exclusive_mutation
 def approve_actions():
     """
     Human-in-the-loop approval endpoint.
     Approves Pending Approval shipments AND triggers the ChromaDB Learn loop.
     """
     global current_shipments, current_alerts
+    if not any(s.status == "Pending Approval" for s in current_shipments):
+        return {"message": "No actions are awaiting approval.", "updated_shipments": current_shipments}
     count = 0
 
     for shipment in current_shipments:
@@ -363,7 +397,7 @@ def approve_actions():
             severity=latest_alert.severity,
             action_taken=action_taken_text,
             action_type=last_action_type,
-            outcome="success"
+            outcome="unknown"
         )
 
     log_entry = {
@@ -386,6 +420,7 @@ def approve_actions():
 
 
 @app.post("/api/evaluate-outcomes")
+@exclusive_mutation
 def evaluate_outcomes():
     """
     THE LEARN LOOP — Step 2.
